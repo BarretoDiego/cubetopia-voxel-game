@@ -1,0 +1,302 @@
+/* Global Styles for Voxel Engine */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: #0a0a0f;
+}
+
+/* HUD Styling */
+.hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.hud * {
+  pointer-events: auto;
+}
+
+/* Crosshair */
+.crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.crosshair::before,
+.crosshair::after {
+  content: "";
+  position: absolute;
+  background: white;
+  opacity: 0.8;
+  mix-blend-mode: difference;
+}
+
+.crosshair::before {
+  width: 20px;
+  height: 2px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.crosshair::after {
+  width: 2px;
+  height: 20px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Debug Info Panel */
+.debug-panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  color: white;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 12px;
+  min-width: 200px;
+}
+
+.debug-panel h1 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fbbf24;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.debug-panel h1::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  background: #22c55e;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.debug-panel .stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.debug-panel .stat:last-child {
+  border-bottom: none;
+}
+
+.debug-panel .label {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.debug-panel .value {
+  color: #60a5fa;
+  font-weight: 500;
+}
+
+/* Hotbar */
+.hotbar {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 8px;
+}
+
+.hotbar-slot {
+  width: 56px;
+  height: 56px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.hotbar-slot:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.hotbar-slot.selected {
+  border-color: white;
+  transform: scale(1.1);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+.hotbar-slot .block-preview {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 2px 4px rgba(255, 255, 255, 0.1);
+}
+
+.hotbar-slot .block-name {
+  font-size: 9px;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  margin-top: 2px;
+  font-weight: 500;
+}
+
+.hotbar-slot .key-hint {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+}
+
+.hotbar-slot .block-count {
+  position: absolute;
+  bottom: 18px;
+  right: 4px;
+  font-size: 11px;
+  color: white;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  background: rgba(0, 0, 0, 0.5);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+/* Instructions overlay */
+.instructions {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 32px 48px;
+  text-align: center;
+  color: white;
+}
+
+.instructions h2 {
+  font-size: 24px;
+  margin-bottom: 16px;
+  color: #fbbf24;
+}
+
+.instructions p {
+  margin: 8px 0;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.instructions .key {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: monospace;
+  margin: 0 4px;
+}
+
+.instructions .start-btn {
+  margin-top: 24px;
+  padding: 12px 32px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.instructions .start-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
+}
+
+/* Loading screen */
+.loading {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #0a0a0f;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  z-index: 1000;
+}
+
+.loading h1 {
+  font-size: 32px;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.loading .spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
