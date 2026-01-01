@@ -136,15 +136,14 @@ func (p *Player) updateNormal(dt float32) {
 }
 
 func (p *Player) updateFlying(dt float32) {
-	// Calculate movement direction based on yaw and pitch
+	// Calculate movement direction based on yaw only (for horizontal)
 	yawRad := float64(p.Yaw) * math.Pi / 180.0
-	pitchRad := float64(p.Pitch) * math.Pi / 180.0
 
-	// Full 3D forward vector
+	// Horizontal forward/right vectors
 	forward := mgl32.Vec3{
-		float32(math.Cos(yawRad) * math.Cos(pitchRad)),
-		float32(math.Sin(pitchRad)),
-		float32(math.Sin(yawRad) * math.Cos(pitchRad)),
+		float32(math.Cos(yawRad)),
+		0,
+		float32(math.Sin(yawRad)),
 	}
 	right := mgl32.Vec3{
 		float32(-math.Sin(yawRad)),
@@ -152,11 +151,22 @@ func (p *Player) updateFlying(dt float32) {
 		float32(math.Cos(yawRad)),
 	}
 
+	// Calculate horizontal movement
 	moveDir := forward.Mul(p.moveForward).Add(right.Mul(p.moveRight))
 
-	speed := float32(PlayerSpeed * 2) // Faster in fly mode
+	// Add vertical movement: Space = up, Shift = down (using wantJump for up, sprinting for down)
+	if p.wantJump {
+		moveDir[1] = 1.0 // Go up
+	}
 	if p.IsSprinting {
-		speed *= SprintMultiplier
+		moveDir[1] = -1.0 // Go down
+	}
+
+	speed := float32(PlayerSpeed * 2) // Faster in fly mode
+
+	// Normalize if moving
+	if moveDir.Len() > 0 {
+		moveDir = moveDir.Normalize()
 	}
 
 	// Direct position update (no collision)

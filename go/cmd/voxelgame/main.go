@@ -465,10 +465,15 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 		g.movement.ToggleCrouch()
 	}
 
-	// Update camera from player rotation
-	camera := g.engine.GetCamera()
-	camera.SetPosition(g.player.Position)
-	camera.SetRotation(g.player.Yaw, g.player.Pitch)
+	// === MOUSE LOOK FIRST ===
+	dx, dy := input.GetMouseDelta()
+	sens := g.settings.MouseSensitivity
+	if g.settings.InvertY {
+		dy = -dy
+	}
+	if dx != 0 || dy != 0 {
+		g.player.SetRotation(g.player.Yaw+float32(dx)*sens, g.player.Pitch-float32(dy)*sens)
+	}
 
 	// Get movement input
 	var forward, right float32
@@ -490,16 +495,6 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 
 	sprint := input.IsKeyPressed(glfw.KeyLeftShift) && g.movement.CanSprint()
 	jump := input.IsKeyPressed(glfw.KeySpace)
-
-	// Handle mouse look
-	dx, dy := input.GetMouseDelta()
-	sens := g.settings.MouseSensitivity
-	if g.settings.InvertY {
-		dy = -dy
-	}
-	if dx != 0 || dy != 0 {
-		g.player.SetRotation(g.player.Yaw+float32(dx)*sens, g.player.Pitch+float32(dy)*sens)
-	}
 
 	// Check if underwater
 	playerBlockY := int(g.player.Position.Y())
@@ -524,6 +519,11 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 
 	// Update player physics
 	g.player.Update(dt)
+
+	// === UPDATE CAMERA FROM PLAYER AFTER ALL UPDATES ===
+	camera := g.engine.GetCamera()
+	camera.SetPosition(g.player.Position)
+	camera.SetRotation(g.player.Yaw, g.player.Pitch)
 
 	// Update world around player
 	g.world.Update(

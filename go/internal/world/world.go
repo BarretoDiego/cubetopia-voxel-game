@@ -47,8 +47,8 @@ func NewWorld(seed int64) *World {
 	terrainGen := terrain.NewGenerator(seed)
 
 	chunkConfig := chunk.DefaultManagerConfig()
-	chunkConfig.RenderDistance = 3
-	chunkConfig.MaxLoadedChunks = 100
+	chunkConfig.RenderDistance = 5 // Increased for better view
+	chunkConfig.MaxLoadedChunks = 200
 
 	w := &World{
 		Seed:             seed,

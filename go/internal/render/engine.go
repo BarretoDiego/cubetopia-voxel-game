@@ -108,8 +108,8 @@ func NewEngine(config Config) (*Engine, error) {
 
 	// Configure OpenGL
 	gl.Enable(gl.DEPTH_TEST)
-	gl.Enable(gl.CULL_FACE)
-	gl.CullFace(gl.BACK)
+	// Disable face culling for now - blocks were appearing hollow
+	gl.Disable(gl.CULL_FACE)
 	gl.Enable(gl.MULTISAMPLE)
 
 	// Blending for transparent blocks
