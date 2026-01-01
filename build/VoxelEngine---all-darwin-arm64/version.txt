@@ -1,0 +1,7 @@
+Voxel Engine
+================================
+Version:     --all
+Build Date:  2026-01-01T21:23:13Z
+Git Commit:  d2d09cd
+Description: A high-performance voxel engine written in Go with OpenGL rendering
+Author:      Diego da Cunha
