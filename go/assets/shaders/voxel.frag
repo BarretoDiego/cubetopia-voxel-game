@@ -39,10 +39,9 @@ void main() {
     // Material specific properties
     float specularStrength = 0.0;
     
-    if (vMaterialId == 3.0) { // Ice
+    if (vMaterialId == 3.0) { // Ice/Glass
         specularStrength = 0.8;
-       // Semi-transparent handling would go here or in blend state
-    } else if (vMaterialId == 4.0) { // Water
+    } else if (vMaterialId == 2.0) { // Water/Liquid
         specularStrength = 0.5;
     }
     
@@ -63,7 +62,7 @@ void main() {
     // Transparency for Ice/Water (Basic alpha for now)
     float alpha = 1.0;
     if (vMaterialId == 3.0) alpha = 0.7; // Ice
-    if (vMaterialId == 4.0) alpha = 0.6; // Water
+    if (vMaterialId == 2.0) alpha = 0.6; // Water
     
     fragColor = vec4(finalColor, alpha);
 }

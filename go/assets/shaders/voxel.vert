@@ -28,10 +28,8 @@ float hash(vec2 p) {
 void main() {
     vec3 pos = aPosition;
     
-    // Wind Effect (Material ID 2 = Grass/Foliage, 5 = Leaves)
-    // We'll define these IDs properly later, but for now assuming non-zero is potentially swayable
-    // Ideally we pass a flag or use specific IDs.
-    if (aMaterialId == 2.0 || aMaterialId == 5.0) { 
+    // Wind Effect (Material ID 1 = Foliage, 2 = Liquid/Water)
+    if (aMaterialId == 1.0 || aMaterialId == 2.0) { 
         // Only sway top vertices of grass/leaves
         // Simplified check: if not bottom vertices (assuming unit cube 0-1)
         // Adjust logic based on actual mesh coordinates if needed.

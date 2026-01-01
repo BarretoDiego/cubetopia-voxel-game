@@ -28,6 +28,9 @@ type Engine struct {
 	// Texture Manager
 	textureManager *TextureManager
 
+	// Particle System
+	particleSystem *ParticleSystem
+
 	// Input state
 	input *Input
 
@@ -63,15 +66,51 @@ func DefaultConfig() Config {
 
 // NewEngine creates a new rendering engine
 func NewEngine(config Config) (*Engine, error) {
-	// ... (GLFW and OpenGL init)
+	// Initialize GLFW
+	if err := glfw.Init(); err != nil {
+		return nil, fmt.Errorf("failed to initialize GLFW: %w", err)
+	}
+
+	// Configure GLFW
+	glfw.WindowHint(glfw.Resizable, glfw.True)
+	glfw.WindowHint(glfw.ContextVersionMajor, 4)
+	glfw.WindowHint(glfw.ContextVersionMinor, 1)
+	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
+	glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
+
+	// Anti-aliasing
+	glfw.WindowHint(glfw.Samples, 4)
+
+	// Create window
+	var monitor *glfw.Monitor
+	if config.Fullscreen {
+		monitor = glfw.GetPrimaryMonitor()
+	}
+
+	window, err := glfw.CreateWindow(config.Width, config.Height, config.Title, monitor, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create window: %w", err)
+	}
+
+	window.MakeContextCurrent()
+
+	// VSync
+	if config.VSync {
+		glfw.SwapInterval(1)
+	} else {
+		glfw.SwapInterval(0)
+	}
 
 	// Initialize OpenGL
 	if err := gl.Init(); err != nil {
 		return nil, fmt.Errorf("failed to initialize OpenGL: %w", err)
 	}
-	// ... (rest of init)
 
-	// Enable features
+	// Print OpenGL version
+	version := gl.GoStr(gl.GetString(gl.VERSION))
+	fmt.Printf("OpenGL version: %s\n", version)
+
+	// Configure OpenGL
 	gl.Enable(gl.DEPTH_TEST)
 	gl.Enable(gl.CULL_FACE)
 	gl.CullFace(gl.BACK)
@@ -102,6 +141,11 @@ func NewEngine(config Config) (*Engine, error) {
 		fmt.Printf("Error loading textures: %v\n", err)
 	}
 
+	ps, err := NewParticleSystem(1000)
+	if err != nil {
+		fmt.Printf("Error initializing particle system: %v\n", err)
+	}
+
 	engine := &Engine{
 		window:         window,
 		width:          config.Width,
@@ -109,11 +153,15 @@ func NewEngine(config Config) (*Engine, error) {
 		camera:         NewCamera(mgl32.Vec3{0, 50, 0}),
 		input:          NewInput(),
 		textureManager: tm,
+		particleSystem: ps,
 	}
 
 	// Set up callbacks
 	window.SetFramebufferSizeCallback(engine.framebufferSizeCallback)
-	// ... (rest of callbacks)
+	window.SetKeyCallback(engine.keyCallback)
+	window.SetCursorPosCallback(engine.cursorPosCallback)
+	window.SetMouseButtonCallback(engine.mouseButtonCallback)
+	window.SetScrollCallback(engine.scrollCallback)
 
 	// Start with cursor visible for menus (will be captured when game starts)
 	window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
@@ -174,12 +222,29 @@ func (e *Engine) Run(onUpdate func(dt float32), onRender func()) {
 			e.onUpdate(e.deltaTime)
 		}
 
+		// Update Particles
+		if e.particleSystem != nil {
+			e.particleSystem.Update(e.deltaTime)
+		}
+
 		// Clear buffers
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-		// Render
+		// Render Voxels
 		if e.onRender != nil {
 			e.onRender()
+		}
+
+		// Render Particles (Last for transparency)
+		if e.particleSystem != nil {
+			// vp := e.GetViewProjection() // Unused
+			view := e.camera.GetViewMatrix()
+			projection := mgl32.Perspective(
+				mgl32.DegToRad(e.camera.FOV),
+				float32(e.width)/float32(e.height),
+				0.1, 1000.0,
+			)
+			e.particleSystem.Render(view, projection)
 		}
 
 		// Swap buffers
@@ -208,6 +273,11 @@ func (e *Engine) GetInput() *Input {
 // GetDeltaTime returns the current frame delta time
 func (e *Engine) GetDeltaTime() float32 {
 	return e.deltaTime
+}
+
+// GetParticleSystem returns the particle system
+func (e *Engine) GetParticleSystem() *ParticleSystem {
+	return e.particleSystem
 }
 
 // GetViewProjection returns the combined view-projection matrix

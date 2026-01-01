@@ -104,6 +104,16 @@ func (m *Mesher) GenerateMesh(c *Chunk, getBlock BlockGetter) *MeshData {
 					blockType, blockDef,
 					c, getBlock,
 				)
+
+				// Add custom details (foliage, grass blades)
+				if blockDef.HasCustomMesh || blockType == block.Grass {
+					m.addDetailedGeometry(
+						x, y, z,
+						worldX, y, worldZ,
+						blockType, blockDef,
+						c, getBlock,
+					)
+				}
 			}
 		}
 	}
@@ -118,6 +128,129 @@ func (m *Mesher) GenerateMesh(c *Chunk, getBlock BlockGetter) *MeshData {
 		VertexCount: len(m.vertices) / VertexSize,
 		IndexCount:  len(m.indices),
 	}
+}
+
+// addDetailedGeometry adds custom geometry like cross-meshes or grass blades
+func (m *Mesher) addDetailedGeometry(
+	lx, ly, lz int,
+	wx, wy, wz int,
+	blockType block.Type,
+	blockDef block.Definition,
+	c *Chunk,
+	getBlock BlockGetter,
+) {
+	// 1. Cross Mesh for Flowers/TallGrass (Foliage Material + Empty/Transparent block)
+	// We use this if it's not a solid cube but has custom mesh
+	if !blockDef.Solid && blockDef.HasCustomMesh {
+		m.addCrossMesh(float32(lx), float32(ly), float32(lz), blockDef)
+		return
+	}
+
+	// 2. Extra blades for Grass Block (Solid block with foliage on top)
+	if blockType == block.Grass {
+		// Only add blades if block above is air
+		above := getBlock(wx, wy+1, wz)
+		if above == block.Air || (block.GetDefinition(above).Transparent) {
+			m.addGrassBlades(float32(lx), float32(ly), float32(lz), blockDef)
+		}
+	}
+}
+
+// addCrossMesh adds two intersecting quads for flowers/grass
+func (m *Mesher) addCrossMesh(x, y, z float32, blockDef block.Definition) {
+	color := blockDef.Color
+	matID := float32(blockDef.Material)
+	// We'll use the side texture for the cross pattern
+	// In the future add texture support for this geometry
+
+	// Quad 1: (0,0,0)-(1,0,1) diagonal? No, vertical diagonal.
+	// (0.15, 0, 0.15) to (0.85, 1, 0.85)
+	v1 := [4][3]float32{
+		{0.15, 0, 0.15}, {0.85, 0, 0.85}, // Bottom
+		{0.85, 1, 0.85}, {0.15, 1, 0.15}, // Top
+	}
+	// Quad 2
+	v2 := [4][3]float32{
+		{0.15, 0, 0.85}, {0.85, 0, 0.15}, // Bottom
+		{0.85, 1, 0.15}, {0.15, 1, 0.85}, // Top
+	}
+
+	// Add both sides of diagonal 1
+	m.addQuadCustom(v1[0], v1[1], v1[2], v1[3], x, y, z, color, matID, 0, 0, 1, 1)
+	m.addQuadCustom(v1[1], v1[0], v1[3], v1[2], x, y, z, color, matID, 0, 0, 1, 1) // Flip
+
+	// Add both sides of diagonal 2
+	m.addQuadCustom(v2[0], v2[1], v2[2], v2[3], x, y, z, color, matID, 0, 0, 1, 1)
+	m.addQuadCustom(v2[1], v2[0], v2[3], v2[2], x, y, z, color, matID, 0, 0, 1, 1) // Flip
+}
+
+// addGrassBlades adds small random blades on top of a block
+func (m *Mesher) addGrassBlades(x, y, z float32, blockDef block.Definition) {
+	// Add 4-5 random small triangles/quads
+	// Pseudorandom based on position
+	seed := int(x*31 + y*17 + z*23)
+	count := 5 + (seed % 3)
+
+	color := blockDef.Color
+	matID := float32(block.MaterialFoliage) // Force foliage material for sway
+
+	for i := 0; i < count; i++ {
+		// Random offset
+		r1 := float32((seed+i*13)%100) / 100.0
+		r2 := float32((seed+i*77)%100) / 100.0
+
+		ox := 0.1 + r1*0.8
+		oz := 0.1 + r2*0.8
+
+		h := 0.3 + r1*0.3   // Height 0.3-0.6
+		w := 0.05 + r2*0.05 // Width
+
+		// Small quad
+		v1 := [3]float32{ox - w, 1.0, oz}
+		v2 := [3]float32{ox + w, 1.0, oz}
+		v3 := [3]float32{ox + w, 1.0 + h, oz + (r1-0.5)*0.2} // Lean slightly
+		v4 := [3]float32{ox - w, 1.0 + h, oz + (r1-0.5)*0.2}
+
+		m.addQuadCustom(v1, v2, v3, v4, x, y, z, color, matID, 0, 0, 1, 1)
+	}
+}
+
+// addQuadCustom adds a custom quad with manual vertices
+func (m *Mesher) addQuadCustom(
+	p1, p2, p3, p4 [3]float32,
+	x, y, z float32,
+	color [3]float32,
+	matID float32,
+	u0, v0, u1, v1 float32,
+) {
+	baseIndex := uint32(len(m.vertices) / VertexSize)
+
+	// Normal (simplified up)
+	nx, ny, nz := float32(0), float32(1), float32(0)
+
+	// Vertices
+	verts := [][3]float32{p1, p2, p3, p4}
+	uvs := [][2]float32{{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}}
+
+	for i := 0; i < 4; i++ {
+		// Pos
+		m.vertices = append(m.vertices, x+verts[i][0], y+verts[i][1], z+verts[i][2])
+		// Normal
+		m.vertices = append(m.vertices, nx, ny, nz)
+		// Color
+		m.vertices = append(m.vertices, color[0], color[1], color[2])
+		// AO (Full lit for details)
+		m.vertices = append(m.vertices, 1.0)
+		// UV
+		m.vertices = append(m.vertices, uvs[i][0], uvs[i][1])
+		// MatID
+		m.vertices = append(m.vertices, matID)
+	}
+
+	m.indices = append(m.indices,
+		baseIndex, baseIndex+1, baseIndex+2,
+		baseIndex, baseIndex+2, baseIndex+3,
+	)
 }
 
 // addVisibleFaces adds visible faces of a block to the mesh
