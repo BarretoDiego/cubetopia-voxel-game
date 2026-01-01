@@ -7,6 +7,7 @@ type MenuItem struct {
 	Action   func()
 	Selected bool
 	Enabled  bool
+	Color    [4]float32 // Specific color for this item
 }
 
 // Menu represents a menu screen
@@ -29,10 +30,10 @@ func NewMainMenu(onNewGame, onLoadGame, onSettings, onQuit func()) *Menu {
 	return &Menu{
 		Title: "VOXEL ENGINE",
 		Items: []MenuItem{
-			{Text: "New Game", Action: onNewGame, Enabled: true},
-			{Text: "Load Game", Action: onLoadGame, Enabled: true},
-			{Text: "Settings", Action: onSettings, Enabled: true},
-			{Text: "Quit", Action: onQuit, Enabled: true},
+			{Text: "New Game", Action: onNewGame, Enabled: true, Color: [4]float32{0.2, 0.8, 0.2, 1.0}},   // Green
+			{Text: "Load Game", Action: onLoadGame, Enabled: true, Color: [4]float32{0.2, 0.4, 0.8, 1.0}}, // Blue
+			{Text: "Settings", Action: onSettings, Enabled: true, Color: [4]float32{0.5, 0.5, 0.5, 1.0}},  // Gray
+			{Text: "Quit", Action: onQuit, Enabled: true, Color: [4]float32{0.8, 0.2, 0.2, 1.0}},          // Red
 		},
 		SelectedIndex:   0,
 		IsVisible:       true,
@@ -49,10 +50,10 @@ func NewPauseMenu(onResume, onSettings, onSave, onMainMenu func()) *Menu {
 	return &Menu{
 		Title: "PAUSED",
 		Items: []MenuItem{
-			{Text: "Resume", Action: onResume, Enabled: true},
-			{Text: "Settings", Action: onSettings, Enabled: true},
-			{Text: "Save Game", Action: onSave, Enabled: true},
-			{Text: "Main Menu", Action: onMainMenu, Enabled: true},
+			{Text: "Resume", Action: onResume, Enabled: true, Color: [4]float32{0.2, 0.8, 0.2, 1.0}},      // Green
+			{Text: "Settings", Action: onSettings, Enabled: true, Color: [4]float32{0.5, 0.5, 0.5, 1.0}},  // Gray
+			{Text: "Save Game", Action: onSave, Enabled: true, Color: [4]float32{0.8, 0.6, 0.2, 1.0}},     // Orange
+			{Text: "Main Menu", Action: onMainMenu, Enabled: true, Color: [4]float32{0.8, 0.2, 0.2, 1.0}}, // Red
 		},
 		SelectedIndex:   0,
 		IsVisible:       true,
@@ -172,6 +173,8 @@ func (mr *MenuRenderer) RenderMenu(menu *Menu, screenWidth, screenHeight int) {
 			textColor = menu.DisabledColor
 		} else if i == menu.SelectedIndex {
 			textColor = menu.SelectedColor
+		} else if item.Color[3] > 0 { // Use specific color if set
+			textColor = item.Color
 		} else {
 			textColor = menu.ItemColor
 		}
