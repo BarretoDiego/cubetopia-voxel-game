@@ -39,6 +39,14 @@ const (
 	SpruceLeaves
 	Glass
 	Brick
+	Pickaxe
+	Axe
+	Sword
+	Shovel
+	Lava
+	Campfire
+	StoneBrick
+	MossyStoneBrick
 	BlockTypeCount // Total number of block types
 )
 

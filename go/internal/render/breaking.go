@@ -21,8 +21,6 @@ type BlockBreaker struct {
 
 // NewBlockBreaker creates a new block breaker
 func NewBlockBreaker() (*BlockBreaker, error) {
-	// Shader for the breaking overlay
-	// We'll use a procedural noise/pattern for cracks to avoid needing textures for now
 	vertexShader := `
 		#version 410 core
 		layout (location = 0) in vec3 aPos;
@@ -30,16 +28,20 @@ func NewBlockBreaker() (*BlockBreaker, error) {
 		
 		uniform mat4 viewProj;
 		uniform vec3 blockPos;
+		uniform float progress;
+		uniform float uTime;
 		
 		out vec2 TexCoord;
-		out vec3 LocalPos;
 		
 		void main() {
-			// Add a very small offset to avoid z-fighting with the block
-			vec3 pos = aPos * 1.001 + blockPos - vec3(0.0005);
+			// Shaking effect
+			float shake = sin(uTime * 40.0) * progress * 0.02;
+			vec3 offset = vec3(shake, shake * 0.5, shake * 0.3);
+			
+			// Slightly larger than a block to avoid z-fighting
+			vec3 pos = aPos * 1.002 + blockPos - vec3(0.001) + offset;
 			gl_Position = viewProj * vec4(pos, 1.0);
 			TexCoord = aTexCoord;
-			LocalPos = aPos;
 		}
 	`
 
@@ -48,60 +50,60 @@ func NewBlockBreaker() (*BlockBreaker, error) {
 		out vec4 FragColor;
 		
 		in vec2 TexCoord;
-		in vec3 LocalPos;
 		
 		uniform float progress; // 0.0 to 1.0
 		
-		// Simple hash function for randomness
-		float hash(vec2 col) {
-			return fract(sin(dot(col, vec2(12.9898, 78.233))) * 43758.5453);
+		float hash(vec2 p) {
+			return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+		}
+		
+		float noise(vec2 p) {
+			vec2 i = floor(p);
+			vec2 f = fract(p);
+			f = f*f*(3.0-2.0*f);
+			float a = hash(i);
+			float b = hash(i + vec2(1.0, 0.0));
+			float c = hash(i + vec2(0.0, 1.0));
+			float d = hash(i + vec2(1.0, 1.0));
+			return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 		}
 		
 		void main() {
-			// Procedural crack generation based on progress
-			// We define 10 stages of cracks
-			
 			if (progress <= 0.0) discard;
 			
-			// Center UVs
-			vec2 uv = TexCoord * 2.0 - 1.0;
-			float dist = length(uv);
+			vec2 uv = TexCoord;
 			
-			// Noise for jaggy lines
-			float noise = hash(floor(uv * 10.0));
+			// Darkening based on progress
+			float darken = progress * 0.6;
 			
-			// Check if this pixel is part of a crack
-			// This is a very simplified procedural crack pattern
-			// In a real implementation, we would use textures
+			// Procedural cracks
+			float n = noise(uv * 12.0);
+			float n2 = noise(uv * 24.0 + n);
 			
-			// Create a web-like pattern from center
-			float angle = atan(uv.y, uv.x);
-			float crackId = floor(angle * 3.0 + noise);
+			// Distance from center for radial cracks
+			vec2 distVec = uv - vec2(0.5);
+			float dist = length(distVec);
+			float angle = atan(distVec.y, distVec.x);
 			
-			float stage = floor(progress * 10.0) / 10.0;
+			// Main jagged lines
+			float crack = abs(n - 0.5) * 2.0;
+			crack *= abs(n2 - 0.5) * 4.0;
 			
-			// Dark color for cracks
-			vec4 crackColor = vec4(0.0, 0.0, 0.0, 0.7);
+			// Radial cracks from center
+			float radial = abs(sin(angle * 4.0 + n * 2.0));
+			radial = pow(radial, 10.0) * (progress * 2.1);
 			
-			// Main cracks radiating from center
-			if (abs(sin(angle * 5.0 + noise)) < 0.1 * stage) {
-				FragColor = crackColor;
-				return;
+			// Crack width based on progress
+			float threshold = 1.0 - (progress * 0.85);
+			
+			bool isCrack = (crack > threshold) || (radial > 1.2 - progress);
+			
+			if (isCrack) {
+				FragColor = vec4(0.0, 0.0, 0.0, 0.85);
+			} else {
+				// Base face darkening
+				FragColor = vec4(0.0, 0.0, 0.0, darken);
 			}
-			
-			// Concentric cracks
-			if (abs(dist - stage * 0.8) < 0.05) {
-				FragColor = crackColor;
-				return;
-			}
-			
-			// Random noise cracks
-			if (hash(uv * 20.0) < stage * 0.2) {
-				FragColor = crackColor;
-				return;
-			}
-			
-			discard;
 		}
 	`
 
@@ -232,15 +234,25 @@ func (b *BlockBreaker) Update(dt float32) bool {
 	b.progress += b.currentSpeed * dt
 
 	if b.progress >= 1.0 {
-		b.progress = 0
-		return true // Block broken
+		b.progress = 1.0 // Cap it
+		return true      // Block broken
 	}
 
 	return false
 }
 
+// IsBreaking returns true if the breaker is active
+func (b *BlockBreaker) IsBreaking() bool {
+	return b.isBreaking
+}
+
+// GetBreakingBlock returns the position of the block being broken
+func (b *BlockBreaker) GetBreakingBlock() [3]int {
+	return b.breakingBlock
+}
+
 // Render draws the breaking overlay
-func (b *BlockBreaker) Render(viewProj mgl32.Mat4) {
+func (b *BlockBreaker) Render(viewProj mgl32.Mat4, time float32) {
 	if !b.isBreaking || b.progress <= 0 || b.shader == nil {
 		return
 	}
@@ -253,6 +265,7 @@ func (b *BlockBreaker) Render(viewProj mgl32.Mat4) {
 	b.shader.SetVec3("blockPos", bPos)
 
 	b.shader.SetFloat("progress", b.progress)
+	b.shader.SetFloat("uTime", time)
 
 	gl.BindVertexArray(b.vao)
 
@@ -260,8 +273,12 @@ func (b *BlockBreaker) Render(viewProj mgl32.Mat4) {
 	gl.Enable(gl.BLEND)
 	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
+	// Disable depth writing but keep depth testing
+	gl.DepthMask(false)
+
 	gl.DrawArrays(gl.TRIANGLES, 0, 36)
 
+	gl.DepthMask(true)
 	gl.Disable(gl.BLEND)
 	gl.BindVertexArray(0)
 }

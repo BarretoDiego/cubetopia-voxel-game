@@ -24,29 +24,55 @@ type Inventory struct {
 
 	// Is inventory open
 	IsOpen bool
+
+	// Currently highlighted slot in the inventory panel
+	PanelSelectedIndex int
 }
 
-// NewInventory creates a new inventory with default blocks
+// NewInventory creates a new inventory with all available items
 func NewInventory() *Inventory {
 	inv := &Inventory{
-		SelectedIndex: 0,
+		SelectedIndex:      0,
+		PanelSelectedIndex: 0,
 	}
 
-	// Initialize hotbar with common blocks
+	// Initialize all items in main inventory (creative mode style)
+	allBlocks := block.Registry // We want everything including tools
+	i := 0
+	for bt := range allBlocks {
+		if bt == block.Air || i >= len(inv.Main) {
+			continue
+		}
+		count := 64
+		// Check if it's a tool
+		if bt == block.Pickaxe || bt == block.Axe || bt == block.Sword || bt == block.Shovel {
+			count = 1
+		}
+		inv.Main[i] = InventorySlot{BlockType: bt, Count: count}
+		i++
+	}
+
+	// Default hotbar setup
 	defaults := []block.Type{
+		block.Pickaxe,
+		block.Axe,
+		block.Sword,
 		block.Grass,
 		block.Dirt,
 		block.Stone,
 		block.Wood,
-		block.Glass,
-		block.Brick,
-		block.Sand,
-		block.Water,
 		block.OakLog,
+		block.Glass,
 	}
 
 	for i, bt := range defaults {
-		inv.Hotbar[i] = InventorySlot{BlockType: bt, Count: 64}
+		if i < len(inv.Hotbar) {
+			count := 64
+			if bt == block.Pickaxe || bt == block.Axe || bt == block.Sword || bt == block.Shovel {
+				count = 1
+			}
+			inv.Hotbar[i] = InventorySlot{BlockType: bt, Count: count}
+		}
 	}
 
 	return inv
@@ -76,6 +102,62 @@ func (inv *Inventory) ScrollSelection(delta int) {
 		inv.SelectedIndex += len(inv.Hotbar)
 	}
 	inv.SelectedIndex %= len(inv.Hotbar)
+}
+
+// MovePanelSelection moves the highlighted slot in the inventory panel grid
+func (inv *Inventory) MovePanelSelection(dx, dy int) {
+	// Assuming a grid of 6 columns for the panel (as seen in renderer.go DrawInventoryPanel)
+	cols := 6
+	// Total items available in search (all placeable blocks + tools)
+	info := inv.GetAllBlocksWithCounts()
+	count := len(info)
+
+	if count == 0 {
+		return
+	}
+
+	row := inv.PanelSelectedIndex / cols
+	col := inv.PanelSelectedIndex % cols
+
+	col += dx
+	row += dy
+
+	// Clamping/Wrapping logic
+	if col < 0 {
+		col = cols - 1
+	} else if col >= cols {
+		col = 0
+	}
+
+	newIdx := row*cols + col
+	if newIdx < 0 {
+		newIdx = 0
+	} else if newIdx >= count {
+		newIdx = count - 1
+	}
+
+	inv.PanelSelectedIndex = newIdx
+}
+
+// EquipSelected equips the currently highlighted item into the active hotbar slot
+func (inv *Inventory) EquipSelected() {
+	info := inv.GetAllBlocksWithCounts()
+	if inv.PanelSelectedIndex < 0 || inv.PanelSelectedIndex >= len(info) {
+		return
+	}
+
+	selected := info[inv.PanelSelectedIndex]
+
+	// Create a new slot for the hotbar
+	count := 64
+	if selected.BlockType == block.Pickaxe || selected.BlockType == block.Axe || selected.BlockType == block.Sword || selected.BlockType == block.Shovel {
+		count = 1
+	}
+
+	inv.Hotbar[inv.SelectedIndex] = InventorySlot{
+		BlockType: selected.BlockType,
+		Count:     count,
+	}
 }
 
 // AddBlock adds a block to the inventory

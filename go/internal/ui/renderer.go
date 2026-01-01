@@ -3,6 +3,7 @@ package ui
 
 import (
 	"fmt"
+	"voxelgame/internal/core/block"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/mathgl/mgl32"
@@ -20,6 +21,10 @@ type Renderer struct {
 	// VAO/VBO for quads
 	quadVAO uint32
 	quadVBO uint32
+
+	// VAO/VBO for 3D items in UI
+	cubeVAO uint32
+	cubeVBO uint32
 
 	// Font rendering
 	font *Font
@@ -46,6 +51,9 @@ func NewRenderer(width, height int) (*Renderer, error) {
 
 	// Create quad mesh
 	r.createQuadMesh()
+
+	// Create cube mesh for 3D items
+	r.createCubeMesh()
 
 	// Initialize font
 	r.font = NewFont()
@@ -196,18 +204,15 @@ func (r *Renderer) DrawTargetInfo(name string) {
 }
 
 // DrawHotbar draws the hotbar at the bottom of the screen
-func (r *Renderer) DrawHotbar(selectedIndex int, blockColors [][3]float32) {
-	r.DrawHotbarWithCounts(selectedIndex, blockColors, nil)
+func (r *Renderer) DrawHotbar(selectedIndex int, blockColors [][3]float32, blockTypes []block.Type) {
+	r.DrawHotbarWithCounts(selectedIndex, blockColors, blockTypes, nil, nil)
 }
 
-// DrawHotbarWithCounts draws the hotbar with item quantities
-func (r *Renderer) DrawHotbarWithCounts(selectedIndex int, blockColors [][3]float32, counts []int) {
-	slotSize := float32(50)
-	padding := float32(4)
-	numSlots := len(blockColors)
-	if numSlots > 9 {
-		numSlots = 9
-	}
+// DrawHotbarWithCounts draws the hotbar with item quantities and selected name
+func (r *Renderer) DrawHotbarWithCounts(selectedIndex int, blockColors [][3]float32, blockTypes []block.Type, counts []int, names []string) {
+	slotSize := float32(60) // Increased from 50
+	padding := float32(6)
+	numSlots := 9 // Fixed at 9
 
 	totalWidth := float32(numSlots) * (slotSize + padding)
 	startX := (float32(r.width) - totalWidth) / 2
@@ -226,8 +231,16 @@ func (r *Renderer) DrawHotbarWithCounts(selectedIndex int, blockColors [][3]floa
 		// Block color preview (3D)
 		if i < len(blockColors) {
 			color := blockColors[i]
-			// Draw Isometric Cube
-			r.DrawIsometricCube(x+10, startY+10, slotSize-20, color)
+			bType := block.Air
+			if blockTypes != nil && i < len(blockTypes) {
+				bType = blockTypes[i]
+			} else {
+				// Fallback to finding type by color is hard, assume standard block if we don't have types?
+				// Actually the caller should pass types. For now default to standard cube render if generic.
+			}
+
+			// Render 3D item
+			r.Render3DItemInBox(x, startY, slotSize, bType, color)
 		}
 
 		// Selection border
@@ -249,10 +262,26 @@ func (r *Renderer) DrawHotbarWithCounts(selectedIndex int, blockColors [][3]floa
 			r.DrawText(x+slotSize-float32(len(countStr)*8)-4, startY+slotSize-14, 1.0, countStr, [4]float32{1, 1, 1, 1})
 		}
 	}
+
+	// Draw selected item name above hotbar
+	if names != nil && selectedIndex >= 0 && selectedIndex < len(names) {
+		name := names[selectedIndex]
+		if name != "" {
+			nameScale := float32(1.5)
+			estimatedWidth := float32(len(name)) * 12.0 * nameScale / 1.5 // Approx
+			nameX := (float32(r.width) - estimatedWidth) / 2
+			nameY := startY - 30
+
+			// Subtle shadow/background for text
+			r.DrawRect(nameX-4, nameY-2, estimatedWidth+8, 22, [4]float32{0, 0, 0, 0.4})
+			r.DrawText(nameX, nameY, nameScale, name, [4]float32{1, 1, 0.8, 1})
+		}
+	}
 }
 
 // BlockDisplayInfo contains info for displaying a block in the inventory panel
 type BlockDisplayInfo struct {
+	Type       block.Type
 	Color      [3]float32
 	Name       string
 	Count      int
@@ -260,17 +289,17 @@ type BlockDisplayInfo struct {
 }
 
 // DrawInventoryPanel draws the expanded inventory with all blocks
-func (r *Renderer) DrawInventoryPanel(blocks []BlockDisplayInfo, selectedHotbarIndex int) {
+func (r *Renderer) DrawInventoryPanel(blocks []BlockDisplayInfo, selectedHotbarIndex int, panelSelectedIndex int) {
 	if r.shader == nil || len(blocks) == 0 {
 		return
 	}
 
-	// Panel dimensions
-	cols := 6
+	// Panel dimensions - Increased for better visibility
+	cols := 8 // Increased from 6
 	rows := (len(blocks) + cols - 1) / cols
-	slotSize := float32(60)
-	padding := float32(6)
-	panelPadding := float32(20)
+	slotSize := float32(70) // Increased from 60
+	padding := float32(8)
+	panelPadding := float32(30)
 
 	panelWidth := float32(cols)*(slotSize+padding) + panelPadding*2
 	panelHeight := float32(rows)*(slotSize+padding) + panelPadding*2 + 40 // Extra for title
@@ -280,7 +309,7 @@ func (r *Renderer) DrawInventoryPanel(blocks []BlockDisplayInfo, selectedHotbarI
 	panelY := (float32(r.height) - panelHeight) / 2
 
 	// Background
-	r.DrawRect(panelX, panelY, panelWidth, panelHeight, [4]float32{0.1, 0.1, 0.15, 0.95})
+	r.DrawRect(panelX, panelY, panelWidth, panelHeight, [4]float32{0.08, 0.08, 0.1, 0.95})
 
 	// Border
 	borderColor := [4]float32{0.3, 0.6, 0.4, 1}
@@ -290,11 +319,11 @@ func (r *Renderer) DrawInventoryPanel(blocks []BlockDisplayInfo, selectedHotbarI
 	r.DrawRect(panelX+panelWidth-3, panelY, 3, panelHeight, borderColor) // Right
 
 	// Title
-	r.DrawText(panelX+panelPadding, panelY+10, 1.5, "INVENTARIO (I para fechar)", [4]float32{1, 1, 0.5, 1})
+	r.DrawText(panelX+panelPadding, panelY+10, 1.8, "INVENTARIO (I para fechar)", [4]float32{1, 1, 0.5, 1})
 
 	// Draw blocks in grid
 	startX := panelX + panelPadding
-	startY := panelY + 40
+	startY := panelY + 50
 
 	for i, block := range blocks {
 		col := i % cols
@@ -305,33 +334,51 @@ func (r *Renderer) DrawInventoryPanel(blocks []BlockDisplayInfo, selectedHotbarI
 
 		// Slot background
 		bgColor := [4]float32{0.15, 0.15, 0.2, 0.8}
-		if block.HotbarSlot >= 0 {
+		if i == panelSelectedIndex {
+			// Highlight current selection
+			bgColor = [4]float32{0.3, 0.4, 0.6, 1.0}
+		} else if block.HotbarSlot >= 0 {
 			// Highlight blocks in hotbar
 			bgColor = [4]float32{0.2, 0.3, 0.25, 0.9}
 		}
 		r.DrawRect(x, y, slotSize, slotSize, bgColor)
 
-		// Draw block preview
-		r.DrawIsometricCube(x+12, y+8, slotSize-24, block.Color)
+		// Border for selection
+		if i == panelSelectedIndex {
+			r.DrawRect(x, y, slotSize, 2, [4]float32{1, 1, 0, 1})            // Top
+			r.DrawRect(x, y+slotSize-2, slotSize, 2, [4]float32{1, 1, 0, 1}) // Bottom
+			r.DrawRect(x, y, 2, slotSize, [4]float32{1, 1, 0, 1})            // Left
+			r.DrawRect(x+slotSize-2, y, 2, slotSize, [4]float32{1, 1, 0, 1}) // Right
+		}
+
+		// Draw block preview (3D)
+		r.Render3DItemInBox(x, y, slotSize, block.Type, block.Color)
 
 		// Hotbar slot indicator (top-left)
 		if block.HotbarSlot >= 0 {
 			hotbarStr := fmt.Sprintf("[%d]", block.HotbarSlot+1)
-			r.DrawText(x+2, y+2, 0.9, hotbarStr, [4]float32{1, 1, 0, 1})
+			r.DrawText(x+4, y+4, 1.0, hotbarStr, [4]float32{1, 1, 0, 1})
 		}
 
 		// Count (bottom-right)
 		if block.Count > 0 {
 			countStr := fmt.Sprintf("%d", block.Count)
-			r.DrawText(x+slotSize-float32(len(countStr)*7)-4, y+slotSize-12, 0.9, countStr, [4]float32{1, 1, 1, 1})
+			r.DrawText(x+slotSize-float32(len(countStr)*8)-4, y+slotSize-16, 1.0, countStr, [4]float32{1, 1, 1, 1})
 		} else {
 			// Show "0" for items not in inventory
-			r.DrawText(x+slotSize-10, y+slotSize-12, 0.9, "0", [4]float32{0.5, 0.5, 0.5, 0.8})
+			r.DrawText(x+slotSize-12, y+slotSize-16, 0.9, "0", [4]float32{0.5, 0.5, 0.5, 0.8})
 		}
 	}
 
+	// Name of the highlighted item
+	if panelSelectedIndex >= 0 && panelSelectedIndex < len(blocks) {
+		selectedItem := blocks[panelSelectedIndex]
+		nameText := "Item: " + selectedItem.Name
+		r.DrawText(panelX+panelPadding, startY+float32(rows)*(slotSize+padding)+10, 1.4, nameText, [4]float32{1, 1, 0, 1})
+	}
+
 	// Instructions at bottom
-	r.DrawText(panelX+panelPadding, panelY+panelHeight-25, 1.0, "Teclas 1-9: Selecionar item da hotbar", [4]float32{0.7, 0.7, 0.7, 1})
+	r.DrawText(panelX+panelPadding, panelY+panelHeight-30, 1.2, "Teclas 1-9: Selecionar item da hotbar", [4]float32{0.7, 0.7, 0.7, 1})
 }
 
 // DebugInfo contains debug information to display
@@ -616,9 +663,225 @@ func (r *Renderer) Cleanup() {
 	if r.quadVBO != 0 {
 		gl.DeleteBuffers(1, &r.quadVBO)
 	}
+	if r.cubeVAO != 0 {
+		gl.DeleteVertexArrays(1, &r.cubeVAO)
+	}
+	if r.cubeVBO != 0 {
+		gl.DeleteBuffers(1, &r.cubeVBO)
+	}
 	if r.shader != nil && r.shader.ID != 0 {
 		gl.DeleteProgram(r.shader.ID)
 	}
+}
+
+func (r *Renderer) createCubeMesh() {
+	// Unit cube vertices with normals for 3D UI items
+	vertices := []float32{
+		// Positions        // Normals (approximate for simple shading)
+		// Front face
+		-0.5, -0.5, 0.5, 0, 0, 1,
+		0.5, -0.5, 0.5, 0, 0, 1,
+		0.5, 0.5, 0.5, 0, 0, 1,
+		-0.5, -0.5, 0.5, 0, 0, 1,
+		0.5, 0.5, 0.5, 0, 0, 1,
+		-0.5, 0.5, 0.5, 0, 0, 1,
+
+		// Back face (optional for UI?) - keep for completeness
+		0.5, -0.5, -0.5, 0, 0, -1,
+		-0.5, -0.5, -0.5, 0, 0, -1,
+		-0.5, 0.5, -0.5, 0, 0, -1,
+		0.5, -0.5, -0.5, 0, 0, -1,
+		-0.5, 0.5, -0.5, 0, 0, -1,
+		0.5, 0.5, -0.5, 0, 0, -1,
+
+		// Top face
+		-0.5, 0.5, 0.5, 0, 1, 0,
+		0.5, 0.5, 0.5, 0, 1, 0,
+		0.5, 0.5, -0.5, 0, 1, 0,
+		-0.5, 0.5, 0.5, 0, 1, 0,
+		0.5, 0.5, -0.5, 0, 1, 0,
+		-0.5, 0.5, -0.5, 0, 1, 0,
+
+		// Bottom face
+		-0.5, -0.5, -0.5, 0, -1, 0,
+		0.5, -0.5, -0.5, 0, -1, 0,
+		0.5, -0.5, 0.5, 0, -1, 0,
+		-0.5, -0.5, -0.5, 0, -1, 0,
+		0.5, -0.5, 0.5, 0, -1, 0,
+		-0.5, -0.5, 0.5, 0, -1, 0,
+
+		// Right face
+		0.5, -0.5, 0.5, 1, 0, 0,
+		0.5, -0.5, -0.5, 1, 0, 0,
+		0.5, 0.5, -0.5, 1, 0, 0,
+		0.5, -0.5, 0.5, 1, 0, 0,
+		0.5, 0.5, -0.5, 1, 0, 0,
+		0.5, 0.5, 0.5, 1, 0, 0,
+
+		// Left face
+		-0.5, -0.5, -0.5, -1, 0, 0,
+		-0.5, -0.5, 0.5, -1, 0, 0,
+		-0.5, 0.5, 0.5, -1, 0, 0,
+		-0.5, -0.5, -0.5, -1, 0, 0,
+		-0.5, 0.5, 0.5, -1, 0, 0,
+		-0.5, 0.5, -0.5, -1, 0, 0,
+	}
+
+	gl.GenVertexArrays(1, &r.cubeVAO)
+	gl.GenBuffers(1, &r.cubeVBO)
+
+	gl.BindVertexArray(r.cubeVAO)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.cubeVBO)
+	gl.BufferData(gl.ARRAY_BUFFER, len(vertices)*4, gl.Ptr(vertices), gl.STATIC_DRAW)
+
+	// Strides match renderer logic, but shader expects vec2 pos, vec2 UV?
+	// Wait, the UI shader is 2D!
+	// I CANNOT render 3D meshes with the current UI shader easily if it expects vec2 position.
+	// Current UI Shader: layout(location = 0) in vec2 aPos; layout(location = 1) in vec2 aTexCoord;
+
+	// I need to use a separate shader for 3D items OR modify the UI shader to support 3D attribute (ignoring z for 2D, or having a bool switch).
+	// Easier: Just create a "UIShader3D" or similar, or just project 3D to 2D in code? No, let's update the shader.
+	// Updating the shader... I can change attribute 0 to vec3.
+
+	// For now, let's update the UI shader to take vec3 aPos to support proper 3D rotation.
+	// We'll update createUIShader below.
+
+	gl.VertexAttribPointerWithOffset(0, 3, gl.FLOAT, false, 6*4, 0)
+	gl.EnableVertexAttribArray(0)
+	// Normal as generic attribute 1? UI shader uses aTexCoord at 1.
+	// Let's rely on flat colors for now and fake lighting in shader or just use flat colors.
+	// But I want good looking items.
+	// Let's pass normals.
+	gl.VertexAttribPointerWithOffset(2, 3, gl.FLOAT, false, 6*4, 3*4)
+	gl.EnableVertexAttribArray(2) // Location 2 for normals
+
+	gl.BindVertexArray(0)
+}
+
+// Render3DItemInBox renders a 3D item within a 2D box area
+func (r *Renderer) Render3DItemInBox(x, y, size float32, item block.Type, color [3]float32) {
+	if r.shader == nil {
+		return
+	}
+
+	gl.UseProgram(r.shader.ID)
+
+	// Enable depth test for 3D item
+	gl.Enable(gl.DEPTH_TEST)
+	gl.Clear(gl.DEPTH_BUFFER_BIT) // Clear depth for item overlay? No, might clear entire screen.
+	// Just clearing the depth buffer area for the item is tricky.
+	// Instead, just draw it on top with depth test enabled but cleared beforehand?
+	// Actually, since UI is drawn last and on top (Ortho), 3D items inside it need to handle their own depth.
+	// Let's just enable depth test and hope the z-buffer from world doesn't interfere (usually cleared before UI or UI uses different range).
+	// UI typically uses no depth test.
+
+	// We can clear just the depth buffer bit if we want these items to self-occlude perfectly.
+	gl.Clear(gl.DEPTH_BUFFER_BIT)
+
+	// Viewport logic? No, just transform.
+
+	// Center of box
+	cx := x + size/2
+	cy := y + size/2
+
+	// Matrix setup
+	projection := mgl32.Ortho(0, float32(r.width), float32(r.height), 0, -1000, 1000) // Deep Z for 3D rotation
+	projLoc := gl.GetUniformLocation(r.shader.ID, gl.Str("uProjection\x00"))
+	gl.UniformMatrix4fv(projLoc, 1, false, &projection[0])
+
+	// Model Matrix
+	baseModel := mgl32.Translate3D(cx, cy, 0)
+	// Scale to fit box
+	scale := size * 0.4
+	baseModel = baseModel.Mul4(mgl32.Scale3D(scale, scale, scale))
+
+	// Rotate for isometric-ish view
+	// Flip Y because Ortho Y is down/up?
+	// Ortho is (0,0) top-left.
+	baseModel = baseModel.Mul4(mgl32.HomogRotate3DX(mgl32.DegToRad(30)))
+	baseModel = baseModel.Mul4(mgl32.HomogRotate3DY(mgl32.DegToRad(45)))
+
+	// We need to implement the specific item logic again here.
+	// Duplicating small logic from creature.go for separation.
+
+	r.renderItemModel(item, baseModel, color)
+
+	// Restore state
+	gl.Disable(gl.DEPTH_TEST)
+	gl.UseProgram(r.shader.ID) // Restore program if changed (it wasn't)
+
+	// Re-set projection for 2D
+	// (DrawRect handles its own uniforms so we are fine)
+}
+
+func (r *Renderer) renderItemModel(item block.Type, baseModel mgl32.Mat4, mainColor [3]float32) {
+	handleColor := [3]float32{0.55, 0.35, 0.17}
+
+	// Uniforms for light
+	// Standard UI shader doesn't have lighting.
+	// We need to use "uUseTexture" false + uColor.
+	// To get 3D shading, we might need a dedicated shader or Hack it by altering color based on normal (if we had access to normal in frag shader).
+	// Current fragment shader:
+	// uniform vec4 uColor;
+	// ...
+	// fragColor = uColor;
+
+	// To look good, we can just pass different uColor for different sides?
+	// But we are drawing a cube VAO with many faces at once.
+	// Without a lighting shader, it will look flat solid color.
+	// We should update the UI shader to support basic lighting or normals!
+
+	// Let's assume we update shader below.
+
+	switch item {
+	case block.Pickaxe:
+		r.renderCubePart(baseModel, mgl32.Vec3{0.15, 1.4, 0.15}, mgl32.Vec3{0, 0, 0}, handleColor)   // Handle
+		r.renderCubePart(baseModel, mgl32.Vec3{0.4, 0.25, 0.25}, mgl32.Vec3{0, 0.7, 0}, mainColor)   // Head center
+		r.renderCubePart(baseModel, mgl32.Vec3{0.3, 0.2, 0.2}, mgl32.Vec3{-0.3, 0.65, 0}, mainColor) // L
+		r.renderCubePart(baseModel, mgl32.Vec3{0.3, 0.2, 0.2}, mgl32.Vec3{0.3, 0.65, 0}, mainColor)  // R
+
+	case block.Sword:
+		r.renderCubePart(baseModel, mgl32.Vec3{0.15, 0.5, 0.15}, mgl32.Vec3{0, -0.6, 0}, handleColor)
+		r.renderCubePart(baseModel, mgl32.Vec3{0.6, 0.1, 0.2}, mgl32.Vec3{0, -0.3, 0}, mainColor)
+		r.renderCubePart(baseModel, mgl32.Vec3{0.2, 1.4, 0.1}, mgl32.Vec3{0, 0.5, 0}, mainColor)
+
+	case block.Axe:
+		r.renderCubePart(baseModel, mgl32.Vec3{0.15, 1.4, 0.15}, mgl32.Vec3{0, 0, 0}, handleColor)
+		r.renderCubePart(baseModel, mgl32.Vec3{0.3, 0.3, 0.2}, mgl32.Vec3{0.1, 0.6, 0}, mainColor)
+		r.renderCubePart(baseModel, mgl32.Vec3{0.2, 0.6, 0.2}, mgl32.Vec3{0.3, 0.6, 0}, mainColor)
+		r.renderCubePart(baseModel, mgl32.Vec3{0.15, 0.2, 0.2}, mgl32.Vec3{-0.1, 0.6, 0}, mainColor)
+
+	case block.Shovel:
+		r.renderCubePart(baseModel, mgl32.Vec3{0.15, 1.4, 0.15}, mgl32.Vec3{0, 0.2, 0}, handleColor)
+		r.renderCubePart(baseModel, mgl32.Vec3{0.5, 0.6, 0.1}, mgl32.Vec3{0, -0.7, 0}, mainColor)
+
+	default:
+		// Cube
+		r.renderCubePart(baseModel, mgl32.Vec3{1, 1, 1}, mgl32.Vec3{0, 0, 0}, mainColor)
+	}
+}
+
+func (r *Renderer) renderCubePart(baseModel mgl32.Mat4, size mgl32.Vec3, offset mgl32.Vec3, color [3]float32) {
+	model := baseModel.Mul4(mgl32.Translate3D(offset.X(), offset.Y(), offset.Z()))
+	model = model.Mul4(mgl32.Scale3D(size.X(), size.Y(), size.Z()))
+
+	// Set uniforms
+	// Projection is set in Render3DItemInBox, so we skip it here for efficiency
+	// (Assuming we only call this from there)
+
+	modLoc := gl.GetUniformLocation(r.shader.ID, gl.Str("uModel\x00"))
+	gl.UniformMatrix4fv(modLoc, 1, false, &model[0])
+
+	colLoc := gl.GetUniformLocation(r.shader.ID, gl.Str("uColor\x00"))
+	gl.Uniform4f(colLoc, color[0], color[1], color[2], 1.0)
+
+	useTexLoc := gl.GetUniformLocation(r.shader.ID, gl.Str("uUseTexture\x00"))
+	gl.Uniform1i(useTexLoc, 0)
+
+	// Draw
+	gl.BindVertexArray(r.cubeVAO)
+	gl.DrawArrays(gl.TRIANGLES, 0, 36)
+	gl.BindVertexArray(0)
 }
 
 func (r *Renderer) createQuadMesh() {
@@ -654,43 +917,54 @@ func (r *Renderer) createQuadMesh() {
 func createUIShader() (*UIShader, error) {
 	vertexSource := `
 #version 410 core
-layout(location = 0) in vec2 aPos;
+layout(location = 0) in vec3 aPos; // Changed to vec3 to support 3D
 layout(location = 1) in vec2 aTexCoord;
+layout(location = 2) in vec3 aNormal; // Added normal
 
 uniform mat4 uProjection;
 uniform mat4 uModel;
 
 out vec2 vTexCoord;
+out vec3 vNormal; 
 
 void main() {
-    gl_Position = uProjection * uModel * vec4(aPos, 0.0, 1.0);
+    // Standard UI transform
+    gl_Position = uProjection * uModel * vec4(aPos, 1.0);
     vTexCoord = aTexCoord;
+    
+    // Transform normal
+    vNormal = mat3(transpose(inverse(uModel))) * aNormal;
 }
 ` + "\x00"
 
 	fragmentSource := `
 #version 410 core
 in vec2 vTexCoord;
+in vec3 vNormal;
 
 uniform vec4 uColor;
 uniform sampler2D uTexture;
 uniform bool uUseTexture;
-uniform vec4 uUVBounds; // u1, v1, u2, v2 (minX, minY, maxX, maxY)
+uniform vec4 uUVBounds; 
 
 out vec4 fragColor;
 
 void main() {
     if (uUseTexture) {
-        // Map unit UV (0..1) to Atlas UV (u1..u2)
-        // x = u1 + x * (u2 - u1)
         float u = uUVBounds.x + vTexCoord.x * (uUVBounds.z - uUVBounds.x);
         float v = uUVBounds.y + vTexCoord.y * (uUVBounds.w - uUVBounds.y);
-        
         vec4 texColor = texture(uTexture, vec2(u, v));
         if (texColor.a < 0.1) discard;
-        fragColor = vec4(1.0, 1.0, 1.0, texColor.r) * uColor; // Font is white on transp
+        fragColor = vec4(1.0, 1.0, 1.0, texColor.r) * uColor;
     } else {
-        fragColor = uColor;
+        // Simple lighting for 3D items
+        if (length(vNormal) > 0.1) {
+            vec3 lightDir = normalize(vec3(0.5, 0.8, 1.0));
+            float diff = max(dot(normalize(vNormal), lightDir), 0.3); // Ambient 0.3
+            fragColor = vec4(uColor.rgb * diff, uColor.a);
+        } else {
+            fragColor = uColor;
+        }
     }
 }
 ` + "\x00"

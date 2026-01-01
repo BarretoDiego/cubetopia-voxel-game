@@ -184,8 +184,14 @@ func (g *Generator) GenerateChunk(c *chunk.Chunk) {
 	// Third pass: decorations (flowers, grass)
 	g.generateDecorations(c, startX, startZ)
 
-	// Fourth pass: waterfalls
+	// Fourth pass: waterfalls & lakes
 	g.generateWaterfalls(c, startX, startZ)
+
+	// Fifth pass: dungeons (inside caves)
+	g.generateDungeons(c, startX, startZ)
+
+	// Sixth pass: surface campfires
+	g.generateCampfires(c, startX, startZ)
 
 	c.IsGenerated = true
 }
@@ -315,6 +321,10 @@ func (g *Generator) getUndergroundBlock(wx, y, wz int, biome Biome) block.Type {
 	// Caves
 	caveValue := g.caveFBM.Sample3D(g.caveNoise, float64(wx), float64(y), float64(wz))
 	if caveValue > float64(g.Config.CaveFrequency) && y > 5 {
+		// Lava at the bottom of deep caves
+		if y < 10 && caveValue > float64(g.Config.CaveFrequency)+0.05 {
+			return block.Lava
+		}
 		return block.Air
 	}
 
@@ -546,10 +556,108 @@ func (g *Generator) generateWaterfalls(c *chunk.Chunk, startX, startZ int) {
 						currentY--
 					}
 
+					// Create a lake at the base
+					g.generateLake(c, currentX, neighborHeight, currentZ, 3, block.Water)
+
 					// Only one waterfall per chunk
 					return
 				}
 			}
+		}
+	}
+}
+
+// generateLake creates a small circular pool
+func (g *Generator) generateLake(c *chunk.Chunk, lx, ly, lz, radius int, liquid block.Type) {
+	for dx := -radius; dx <= radius; dx++ {
+		for dz := -radius; dz <= radius; dz++ {
+			if dx*dx+dz*dz <= radius*radius {
+				nx, nz := lx+dx, lz+dz
+				if nx >= 0 && nx < chunk.Size && nz >= 0 && nz < chunk.Size {
+					// Carve out a bit of the shore if needed, and fill with liquid
+					for dy := -1; dy <= 0; dy++ {
+						ny := ly + dy
+						if ny > 0 && ny < chunk.Height {
+							c.SetBlock(nx, ny, nz, liquid)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// generateDungeons places stone brick structures in large cave pockets
+func (g *Generator) generateDungeons(c *chunk.Chunk, startX, startZ int) {
+	chunkRng := vmath.NewSeededRNG(g.seed + int64(c.CX)*4000 + int64(c.CZ))
+
+	// 5% chance per chunk for a dungeon
+	if chunkRng.Next() > 0.05 {
+		return
+	}
+
+	// Try to find a suitable cave location
+	for attempt := 0; attempt < 10; attempt++ {
+		lx := chunkRng.NextInt(4, chunk.Size-4)
+		lz := chunkRng.NextInt(4, chunk.Size-4)
+		ly := chunkRng.NextInt(10, 30)
+
+		// Check if it's in a cave
+		if c.GetBlock(lx, ly, lz) == block.Air {
+			g.buildDungeonRoom(c, lx, ly, lz, chunkRng)
+			return
+		}
+	}
+}
+
+func (g *Generator) buildDungeonRoom(c *chunk.Chunk, x, y, z int, rng *vmath.SeededRNG) {
+	width := rng.NextInt(5, 8)
+	height := rng.NextInt(4, 6)
+	depth := rng.NextInt(5, 8)
+
+	for dx := -width / 2; dx <= width/2; dx++ {
+		for dy := 0; dy < height; dy++ {
+			for dz := -depth / 2; dz <= depth/2; dz++ {
+				nx, ny, nz := x+dx, y+dy, z+dz
+				if nx < 0 || nx >= chunk.Size || ny < 0 || ny >= chunk.Height || nz < 0 || nz >= chunk.Size {
+					continue
+				}
+
+				isWall := dx == -width/2 || dx == width/2 || dy == 0 || dy == height-1 || dz == -depth/2 || dz == depth/2
+
+				if isWall {
+					brick := block.StoneBrick
+					if rng.Next() < 0.2 {
+						brick = block.MossyStoneBrick
+					}
+					c.SetBlock(nx, ny, nz, brick)
+				} else {
+					c.SetBlock(nx, ny, nz, block.Air)
+				}
+			}
+		}
+	}
+}
+
+// generateCampfires places fogueiras on the surface
+func (g *Generator) generateCampfires(c *chunk.Chunk, startX, startZ int) {
+	chunkRng := vmath.NewSeededRNG(g.seed + int64(c.CX)*5000 + int64(c.CZ))
+
+	// Very rare: 2% chance per chunk
+	if chunkRng.Next() > 0.02 {
+		return
+	}
+
+	lx := chunkRng.NextInt(2, chunk.Size-2)
+	lz := chunkRng.NextInt(2, chunk.Size-2)
+	wx := startX + lx
+	wz := startZ + lz
+	biome := g.getBiome(wx, wz)
+
+	if biome.Name == "plains" || biome.Name == "forest" {
+		height := c.GetHeight(lx, lz)
+		if height > g.Config.SeaLevel {
+			c.SetBlock(lx, height+1, lz, block.Campfire)
 		}
 	}
 }

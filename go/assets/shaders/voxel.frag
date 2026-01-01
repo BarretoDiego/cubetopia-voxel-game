@@ -62,24 +62,42 @@ void main() {
     } else if (vMaterialId == 2.0) { // Water/Liquid
         specularStrength = 0.6;
         fresnel = pow(1.0 - max(dot(vNormal, viewDir), 0.0), 2.0) * 0.3;
-        // Water animation
-        objectColor.rgb *= 0.95 + 0.05 * sin(uTime * 2.0 + vWorldPos.x * 0.5);
+        
+        if (vTextureLayerId == 11.0) { // Lava
+            // Lava animation - slower and more viscous looking
+            float lavaSpeed = 0.5;
+            float pulse = sin(uTime * lavaSpeed + vWorldPos.x * 0.2 + vWorldPos.z * 0.2) * 0.1 + 0.9;
+            objectColor.rgb *= pulse;
+            // Add some "heat" variants
+            objectColor.rgb += vec3(0.2, 0.05, 0.0) * (sin(uTime * 1.5 + vWorldPos.x * 0.8) * 0.5 + 0.5);
+            emissive = 0.8 + (1.0 - uSunIntensity) * 0.2;
+        } else { // Water
+            // Water animation
+            objectColor.rgb *= 0.95 + 0.05 * sin(uTime * 2.0 + vWorldPos.x * 0.5);
+        }
     } else if (vMaterialId == 4.0) { // Stone (slight roughness)
         specularStrength = 0.15;
     }
     
-    // Check for emissive blocks (Diamond ore glow - more visible at night)
-    if (vTextureLayerId > 10.0) {
+    // Check for other emissive blocks (Campfire, Diamond ore, etc.)
+    if (vTextureLayerId == 12.0) { // Campfire
+        float flicker = sin(uTime * 10.0 + vWorldPos.x * 10.0) * 0.1 + 0.9;
+        objectColor.rgb *= flicker;
+        emissive = 0.7 + (1.0 - uSunIntensity) * 0.3;
+    } else if (vTextureLayerId > 10.0 && vTextureLayerId != 11.0 && vTextureLayerId != 12.0) { // Diamond/Other ores
         emissive = 0.15 + (1.0 - uSunIntensity) * 0.2; // Glow more at night
     }
     
     vec3 specular = vec3(1.0) * spec * specularStrength;
     
     // Combine lighting with AO
+    // Emissive blocks are less affected by ambient/diffuse light
     vec3 lighting = objectColor * (ambient + vec3(diffuse * 0.7)) * ao;
+    lighting = mix(lighting, objectColor * ao, emissive * 0.8); // Blend to self-illumination
+    
     lighting += specular * uSunIntensity; // Reduce specular at night
     lighting += fresnel * uSkyColor * 0.5; // Reflection tinted by sky
-    lighting += objectColor * emissive; // Glow effect
+    lighting += objectColor * (emissive * 1.5); // Stronger glow effect
     
     // Distance fog (Atmospheric) with dynamic color
     float dist = length(uCameraPos - vWorldPos);

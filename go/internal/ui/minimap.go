@@ -45,123 +45,139 @@ func (m *Minimap) initTexture() {
 // Update updates the minimap texture based on world data
 func (m *Minimap) Update(playerPos mgl32.Vec3, getBiome func(x, z int) string, getHeight func(x, z int) int, creatures []mgl32.Vec3) {
 	px := int(playerPos.X())
+	py := int(playerPos.Y())
 	pz := int(playerPos.Z())
 	center := m.size / 2
 	radius := m.size / 2
 
-	// Update scan angle
+	// Update scan angle (sweep line still looks cool as an overlay)
 	m.updateCount++
-	m.scanAngle = float64(m.updateCount) * 0.05 // Sweep speed
+	m.scanAngle = float64(m.updateCount) * 0.05
 	if m.scanAngle > 2*math.Pi {
 		m.scanAngle -= 2 * math.Pi
 		m.updateCount = 0
 	}
 
-	// Clear to dark radar green/black
+	// 1. Clear background
 	for y := 0; y < m.size; y++ {
 		for x := 0; x < m.size; x++ {
 			dx := x - center
 			dy := y - center
 			dist := math.Sqrt(float64(dx*dx + dy*dy))
-
 			if dist > float64(radius) {
-				// Outside circle - transparent
 				m.pixels.Set(x, y, color.RGBA{0, 0, 0, 0})
 			} else {
-				// Dark radar background
-				m.pixels.Set(x, y, color.RGBA{0, 15, 8, 255})
+				m.pixels.Set(x, y, color.RGBA{0, 10, 5, 255})
 			}
 		}
 	}
 
-	// Render terrain with radar color scheme
-	for y := 0; y < m.size; y++ {
-		for x := 0; x < m.size; x++ {
-			dx := x - center
-			dy := y - center
-			dist := math.Sqrt(float64(dx*dx + dy*dy))
+	// 2. Render Isometric Terrain
+	// We'll scan a square area around the player and project it
+	viewRange := 24 // Number of blocks to show
+	isoScaleX := 4.0
+	isoScaleY := 2.0
+	heightScale := 3.0
 
-			if dist > float64(radius)-2 {
-				continue // Skip outside circle
-			}
-
-			// World coordinates
-			wx := px + int(float64(dx)*m.scale)
-			wz := pz + int(float64(dy)*m.scale)
-
-			biome := getBiome(wx, wz)
-			height := getHeight(wx, wz)
-
-			var c color.RGBA
-
-			// Radar-style monochrome green colors
-			switch biome {
-			case "plains":
-				c = color.RGBA{30, 80, 50, 255}
-			case "desert":
-				c = color.RGBA{60, 70, 40, 255}
-			case "snow":
-				c = color.RGBA{80, 100, 90, 255}
-			case "forest":
-				c = color.RGBA{20, 60, 35, 255}
-			case "mountains":
-				c = color.RGBA{50, 60, 55, 255}
-			default:
-				c = color.RGBA{25, 50, 35, 255}
-			}
-
-			// Height shading
-			diff := height - int(playerPos.Y())
-			shade := 1.0
-			if diff < -10 {
-				shade = 0.6
-			} else if diff > 10 {
-				shade = 1.3
-			}
-
-			// Water
-			if height < 12 && biome != "desert" {
-				c = color.RGBA{20, 40, 80, 255}
-			} else {
-				c.R = uint8(clamp(float64(c.R)*shade, 0, 255))
-				c.G = uint8(clamp(float64(c.G)*shade, 0, 255))
-				c.B = uint8(clamp(float64(c.B)*shade, 0, 255))
-			}
-
+	// Helper to set pixel if within radar circle
+	setPixel := func(x, y int, c color.RGBA) {
+		if x < 0 || x >= m.size || y < 0 || y >= m.size {
+			return
+		}
+		dx := x - center
+		dy := y - center
+		if dx*dx+dy*dy < radius*radius {
 			m.pixels.Set(x, y, c)
 		}
 	}
 
-	// Draw radar grid rings
-	gridColor := color.RGBA{0, 100, 60, 100}
-	for _, ratio := range []float64{0.25, 0.5, 0.75, 1.0} {
+	// Draw blocks back-to-front
+	// Z goes from min to max, X goes from min to max
+	for dz := -viewRange; dz <= viewRange; dz++ {
+		for dx := -viewRange; dx <= viewRange; dx++ {
+			wx := px + dx
+			wz := pz + dz
+
+			biome := getBiome(wx, wz)
+			h := getHeight(wx, wz)
+
+			// Isometric projection
+			// ScreenX = (dx - dz) * (isoScaleX / 2) + center
+			// ScreenY = (dx + dz) * (isoScaleY / 2) - (h - py) * heightScale + center
+			sx := float64(dx-dz)*(isoScaleX/2) + float64(center)
+			sy := float64(dx+dz)*(isoScaleY/2) - float64(h-py)*heightScale + float64(center)
+
+			// Get base color
+			var c color.RGBA
+			switch biome {
+			case "plains":
+				c = color.RGBA{45, 120, 60, 255}
+			case "desert":
+				c = color.RGBA{180, 160, 80, 255}
+			case "snow":
+				c = color.RGBA{200, 220, 255, 255}
+			case "forest":
+				c = color.RGBA{30, 90, 40, 255}
+			case "mountains":
+				c = color.RGBA{100, 110, 115, 255}
+			default:
+				c = color.RGBA{50, 100, 60, 255}
+			}
+
+			// Water
+			if h < 12 && biome != "desert" {
+				c = color.RGBA{40, 80, 200, 200}
+				h = 12 // Level water surface
+			}
+
+			// Height shading
+			shade := 1.0 + float64(h-py)*0.05
+			c.R = uint8(clamp(float64(c.R)*shade, 0, 255))
+			c.G = uint8(clamp(float64(c.G)*shade, 0, 255))
+			c.B = uint8(clamp(float64(c.B)*shade, 0, 255))
+
+			// Draw a small block shape (diamond)
+			ix, iy := int(sx), int(sy)
+			setPixel(ix, iy, c)   // Center
+			setPixel(ix-1, iy, c) // Left
+			setPixel(ix+1, iy, c) // Right
+			setPixel(ix, iy-1, c) // Top
+			setPixel(ix, iy+1, c) // Bottom
+			setPixel(ix-2, iy, c) // Far Left
+			setPixel(ix+2, iy, c) // Far Right
+
+			// Optional: draw "walls" for elevation depth
+			wallColor := color.RGBA{uint8(float64(c.R) * 0.7), uint8(float64(c.G) * 0.7), uint8(float64(c.B) * 0.7), 255}
+			for wh := 1; wh < 3; wh++ {
+				setPixel(ix, iy+wh+1, wallColor)
+				setPixel(ix-1, iy+wh, wallColor)
+				setPixel(ix+1, iy+wh, wallColor)
+			}
+		}
+	}
+
+	// 3. Draw grid and trim
+	// Rings
+	for _, ratio := range []float64{0.5, 1.0} {
 		r := float64(radius) * ratio
-		for angle := 0.0; angle < 2*math.Pi; angle += 0.02 {
+		for angle := 0.0; angle < 2*math.Pi; angle += 0.01 {
 			rx := center + int(math.Cos(angle)*r)
 			ry := center + int(math.Sin(angle)*r)
 			if rx >= 0 && rx < m.size && ry >= 0 && ry < m.size {
-				m.pixels.Set(rx, ry, gridColor)
+				m.pixels.Set(rx, ry, color.RGBA{0, 255, 100, 80})
 			}
 		}
 	}
 
-	// Draw crosshair
-	for i := 0; i < m.size; i++ {
-		if i >= 0 && i < m.size {
-			// Vertical
-			if math.Abs(float64(i-center)) < float64(radius) {
-				m.pixels.Set(center, i, gridColor)
-			}
-			// Horizontal
-			if math.Abs(float64(i-center)) < float64(radius) {
-				m.pixels.Set(i, center, gridColor)
-			}
-		}
+	// Crosshair
+	for i := center - 5; i <= center+5; i++ {
+		m.pixels.Set(center, i, color.RGBA{255, 255, 255, 150})
+		m.pixels.Set(i, center, color.RGBA{255, 255, 255, 150})
 	}
 
-	// Draw scan sweep line
-	sweepColor := color.RGBA{100, 255, 150, 200}
-	for r := 0.0; r < float64(radius); r += 0.5 {
+	// 4. Draw scan sweep
+	sweepColor := color.RGBA{100, 255, 150, 60}
+	for r := 0.0; r < float64(radius); r += 1.0 {
 		sx := center + int(math.Cos(m.scanAngle)*r)
 		sy := center + int(math.Sin(m.scanAngle)*r)
 		if sx >= 0 && sx < m.size && sy >= 0 && sy < m.size {
@@ -169,46 +185,38 @@ func (m *Minimap) Update(playerPos mgl32.Vec3, getBiome func(x, z int) string, g
 		}
 	}
 
-	// Draw creatures as bright blips
+	// 5. Draw creatures
 	for _, pos := range creatures {
-		cx := int((pos.X()-float32(px))/float32(m.scale)) + center
-		cz := int((pos.Z()-float32(pz))/float32(m.scale)) + center
+		dx := int(pos.X()) - px
+		dz := int(pos.Z()) - pz
+		h := getHeight(int(pos.X()), int(pos.Z()))
 
-		// Check if within radar circle
-		dx := cx - center
-		dz := cz - center
-		dist := math.Sqrt(float64(dx*dx + dz*dz))
+		sx := float64(dx-dz)*(isoScaleX/2) + float64(center)
+		sy := float64(dx+dz)*(isoScaleY/2) - float64(h-py)*heightScale + float64(center)
 
-		if dist < float64(radius)-4 && cx >= 2 && cx < m.size-2 && cz >= 2 && cz < m.size-2 {
-			// Calculate angle to creature for fade effect
-			creatureAngle := math.Atan2(float64(dz), float64(dx))
-			angleDiff := m.scanAngle - creatureAngle
-			if angleDiff < 0 {
-				angleDiff += 2 * math.Pi
-			}
-
-			// Brightness based on scan recency
-			brightness := uint8(255)
-			if angleDiff > 0.5 {
-				brightness = uint8(clamp(255*(1-angleDiff/(2*math.Pi)), 80, 255))
-			}
-
-			col := color.RGBA{brightness, 50, 50, 255} // Red blip
-			m.pixels.Set(cx, cz, col)
-			m.pixels.Set(cx+1, cz, col)
-			m.pixels.Set(cx-1, cz, col)
-			m.pixels.Set(cx, cz+1, col)
-			m.pixels.Set(cx, cz-1, col)
+		creatureAngle := math.Atan2(float64(dz), float64(dx))
+		angleDiff := m.scanAngle - creatureAngle
+		if angleDiff < 0 {
+			angleDiff += 2 * math.Pi
 		}
+
+		brightness := uint8(255)
+		if angleDiff > 0.5 {
+			brightness = uint8(clamp(255*(1-angleDiff/(2*math.Pi)), 100, 255))
+		}
+
+		col := color.RGBA{brightness, 20, 20, 255}
+		ix, iy := int(sx), int(sy)
+		setPixel(ix, iy, col)
+		setPixel(ix+1, iy, col)
+		setPixel(ix-1, iy, col)
+		setPixel(ix, iy+1, col)
+		setPixel(ix, iy-1, col)
 	}
 
-	// Player center (bright white/cyan)
-	playerColor := color.RGBA{200, 255, 220, 255}
+	// Player center handled by crosshair mostly, but add a dot
+	playerColor := color.RGBA{255, 255, 255, 255}
 	m.pixels.Set(center, center, playerColor)
-	m.pixels.Set(center+1, center, playerColor)
-	m.pixels.Set(center-1, center, playerColor)
-	m.pixels.Set(center, center+1, playerColor)
-	m.pixels.Set(center, center-1, playerColor)
 
 	// Upload texture
 	gl.BindTexture(gl.TEXTURE_2D, m.textureID)

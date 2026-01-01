@@ -74,7 +74,7 @@ var Registry = map[Type]Definition{
 		Transparent:   false,
 		Collidable:    true,
 		Color:         hexToRGB("#7a7a7a"),
-		BreakTime:     1.5,
+		BreakTime:     4.0,
 		Material:      MaterialStone,
 		TextureTop:    3,
 		TextureSide:   3,
@@ -86,7 +86,7 @@ var Registry = map[Type]Definition{
 		Transparent:   false,
 		Collidable:    true,
 		Color:         hexToRGB("#8b5a2b"),
-		BreakTime:     2.0,
+		BreakTime:     1.5,
 		TextureTop:    4,
 		TextureSide:   4,
 		TextureBottom: 4,
@@ -175,7 +175,7 @@ var Registry = map[Type]Definition{
 		Transparent: false,
 		Collidable:  true,
 		Color:       hexToRGB("#5a5a5a"),
-		BreakTime:   2.0,
+		BreakTime:   2.5,
 	},
 	Bedrock: {
 		Name:           "Rocha-mãe",
@@ -191,7 +191,7 @@ var Registry = map[Type]Definition{
 		Transparent: false,
 		Collidable:  true,
 		Color:       hexToRGB("#2a2a2a"),
-		BreakTime:   3.0,
+		BreakTime:   4.0,
 	},
 	IronOre: {
 		Name:        "Ferro",
@@ -199,7 +199,7 @@ var Registry = map[Type]Definition{
 		Transparent: false,
 		Collidable:  true,
 		Color:       hexToRGB("#b8945f"),
-		BreakTime:   3.0,
+		BreakTime:   4.0,
 	},
 	GoldOre: {
 		Name:        "Ouro",
@@ -207,7 +207,7 @@ var Registry = map[Type]Definition{
 		Transparent: false,
 		Collidable:  true,
 		Color:       hexToRGB("#fcee4b"),
-		BreakTime:   3.0,
+		BreakTime:   4.0,
 	},
 	DiamondOre: {
 		Name:        "Diamante",
@@ -215,7 +215,7 @@ var Registry = map[Type]Definition{
 		Transparent: false,
 		Collidable:  true,
 		Color:       hexToRGB("#4aedd9"),
-		BreakTime:   5.0,
+		BreakTime:   8.0,
 		Emissive:    0.2,
 	},
 	Cactus: {
@@ -287,7 +287,7 @@ var Registry = map[Type]Definition{
 		Transparent: false,
 		Collidable:  true,
 		Color:       hexToRGB("#6b4423"),
-		BreakTime:   2.0,
+		BreakTime:   1.5,
 	},
 	BirchLog: {
 		Name:        "Tronco de Bétula",
@@ -295,7 +295,7 @@ var Registry = map[Type]Definition{
 		Transparent: false,
 		Collidable:  true,
 		Color:       hexToRGB("#d5c4a1"),
-		BreakTime:   2.0,
+		BreakTime:   1.5,
 	},
 	SpruceLog: {
 		Name:        "Tronco de Pinheiro",
@@ -303,7 +303,7 @@ var Registry = map[Type]Definition{
 		Transparent: false,
 		Collidable:  true,
 		Color:       hexToRGB("#3e2723"),
-		BreakTime:   2.0,
+		BreakTime:   1.5,
 	},
 	OakLeaves: {
 		Name:        "Folhas de Carvalho",
@@ -349,7 +349,86 @@ var Registry = map[Type]Definition{
 		Transparent: false,
 		Collidable:  true,
 		Color:       hexToRGB("#b75a3c"),
-		BreakTime:   2.0,
+		BreakTime:   2.5,
+	},
+	Pickaxe: {
+		Name:        "Picareta",
+		Solid:       false,
+		Transparent: true,
+		Collidable:  false,
+		Color:       hexToRGB("#3498db"),
+	},
+	Axe: {
+		Name:        "Machado",
+		Solid:       false,
+		Transparent: true,
+		Collidable:  false,
+		Color:       hexToRGB("#8b4513"),
+	},
+	Sword: {
+		Name:        "Espada",
+		Solid:       false,
+		Transparent: true,
+		Collidable:  false,
+		Color:       hexToRGB("#bdc3c7"),
+	},
+	Shovel: {
+		Name:        "Pá",
+		Solid:       false,
+		Transparent: true,
+		Collidable:  false,
+		Color:       hexToRGB("#95a5a6"),
+	},
+	Lava: {
+		Name:          "Lava",
+		Solid:         false,
+		Transparent:   false,
+		Collidable:    false,
+		Color:         hexToRGB("#ff4500"),
+		Liquid:        true,
+		Material:      MaterialLiquid,
+		Emissive:      1.0,
+		TextureTop:    11,
+		TextureSide:   11,
+		TextureBottom: 11,
+		Damages:       true,
+	},
+	Campfire: {
+		Name:          "Fogueira",
+		Solid:         false,
+		Transparent:   true,
+		Collidable:    false,
+		Color:         hexToRGB("#ff8c00"),
+		Emissive:      0.8,
+		TextureTop:    12,
+		TextureSide:   12,
+		TextureBottom: 12,
+		HasCustomMesh: true,
+		Material:      MaterialFoliage,
+	},
+	StoneBrick: {
+		Name:          "Tijolo de Pedra",
+		Solid:         true,
+		Transparent:   false,
+		Collidable:    true,
+		Color:         hexToRGB("#a9a9a9"),
+		BreakTime:     1.5,
+		TextureTop:    13,
+		TextureSide:   13,
+		TextureBottom: 13,
+		Material:      MaterialStone,
+	},
+	MossyStoneBrick: {
+		Name:          "Tijolo de Pedra Musgoso",
+		Solid:         true,
+		Transparent:   false,
+		Collidable:    true,
+		Color:         hexToRGB("#8b9467"),
+		BreakTime:     1.5,
+		TextureTop:    14,
+		TextureSide:   14,
+		TextureBottom: 14,
+		Material:      MaterialStone,
 	},
 }
 
@@ -366,7 +445,9 @@ func GetAllPlaceableBlocks() []Type {
 	placeable := make([]Type, 0, BlockTypeCount)
 	for t := Type(1); t < BlockTypeCount; t++ { // Skip Air
 		def := Registry[t]
-		if def.Solid || t == Water { // Include water for building
+		// Include solid blocks, water, and tools
+		isTool := t == Pickaxe || t == Axe || t == Sword || t == Shovel
+		if def.Solid || t == Water || isTool {
 			placeable = append(placeable, t)
 		}
 	}

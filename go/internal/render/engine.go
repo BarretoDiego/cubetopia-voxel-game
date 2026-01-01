@@ -10,6 +10,7 @@ import (
 	"github.com/go-gl/mathgl/mgl32"
 
 	"voxelgame/assets"
+	"voxelgame/internal/core/block"
 )
 
 // ... (init function)
@@ -126,17 +127,21 @@ func NewEngine(config Config) (*Engine, error) {
 	// Define standard texture list - Mapping to IDs 0, 1, 2...
 	// Now loading from embedded assets
 	textureFiles := []string{
-		"textures/dirt.png",       // 0
-		"textures/grass_top.png",  // 1
-		"textures/grass_side.png", // 2
-		"textures/stone.png",      // 3
-		"textures/wood.png",       // 4
-		"textures/leaves.png",     // 5
-		"textures/water.png",      // 6
-		"textures/ice.png",        // 7
-		"textures/sand.png",       // 8
-		"textures/snow.png",       // 9
-		"textures/glass.png",      // 10
+		"textures/dirt.png",            // 0
+		"textures/grass_top.png",       // 1
+		"textures/grass_side.png",      // 2
+		"textures/stone.png",           // 3
+		"textures/wood.png",            // 4
+		"textures/leaves.png",          // 5
+		"textures/water.png",           // 6
+		"textures/ice.png",             // 7
+		"textures/sand.png",            // 8
+		"textures/snow.png",            // 9
+		"textures/glass.png",           // 10
+		"textures/lava.png",            // 11
+		"textures/campfire.png",        // 12
+		"textures/stonebrick.png",      // 13
+		"textures/mossystonebrick.png", // 14
 	}
 	err = tm.LoadBlockTexturesFromEmbed(textureFiles, assets.FS())
 	if err != nil {
@@ -277,6 +282,19 @@ func (e *Engine) GetDeltaTime() float32 {
 // GetParticleSystem returns the particle system
 func (e *Engine) GetParticleSystem() *ParticleSystem {
 	return e.particleSystem
+}
+
+// RenderViewModel renders a 3D item in first-person view
+func (e *Engine) RenderViewModel(item block.Type, cr *CreatureRenderer, sunDir mgl32.Vec3, swingPhase float32) {
+	if cr == nil {
+		return
+	}
+	projection := mgl32.Perspective(
+		mgl32.DegToRad(e.camera.FOV),
+		float32(e.width)/float32(e.height),
+		0.1, 1000.0,
+	)
+	cr.RenderViewModel(item, float32(glfw.GetTime()), swingPhase, projection, sunDir)
 }
 
 // UpdateAtmosphericParticles updates atmospheric particles based on player position and biome

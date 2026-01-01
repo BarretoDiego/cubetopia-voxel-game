@@ -4,6 +4,8 @@ package main
 
 import (
 	"fmt"
+	"math"
+	"math/rand/v2"
 	"os"
 	"runtime"
 	"time"
@@ -528,6 +530,27 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 		g.showInventory = !g.showInventory
 	}
 
+	// Inventory navigation
+	if g.showInventory {
+		if g.wasKeyJustPressed(input, glfw.KeyUp) {
+			g.inventory.MovePanelSelection(0, -1)
+		}
+		if g.wasKeyJustPressed(input, glfw.KeyDown) {
+			g.inventory.MovePanelSelection(0, 1)
+		}
+		if g.wasKeyJustPressed(input, glfw.KeyLeft) {
+			g.inventory.MovePanelSelection(-1, 0)
+		}
+		if g.wasKeyJustPressed(input, glfw.KeyRight) {
+			g.inventory.MovePanelSelection(1, 0)
+		}
+		if g.wasKeyJustPressed(input, glfw.KeyEnter) || g.wasKeyJustPressed(input, glfw.KeySpace) {
+			g.inventory.EquipSelected()
+		}
+		// Return early to prevent movement while in menu if desired,
+		// but let's just let it slide for now unless it feels janky.
+	}
+
 	// Hotbar selection
 	for i := 0; i < 9; i++ {
 		if input.IsKeyPressed(glfw.Key(int(glfw.Key1) + i)) {
@@ -611,6 +634,28 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 	// Update player physics
 	g.player.Update(dt)
 
+	// Update player model animation state
+	if g.playerModel != nil {
+		g.playerModel.AnimationTime += dt
+
+		// Calculate horizontal speed
+		vel := g.player.Velocity
+		speed := float32(math.Sqrt(float64(vel.X()*vel.X() + vel.Z()*vel.Z())))
+
+		g.playerModel.IsMoving = speed > 0.1 && g.player.IsOnGround && !g.player.IsFlying
+		if g.playerModel.IsMoving {
+			// Update walk phase based on speed
+			// 3.0 is a multiplier to match the step speed with movement
+			g.playerModel.WalkPhase += dt * speed * 3.0
+			if g.playerModel.WalkPhase > 2*math.Pi {
+				g.playerModel.WalkPhase -= 2 * math.Pi
+			}
+		} else {
+			// Decay walk phase smoothly when stopping
+			g.playerModel.WalkPhase *= 0.8
+		}
+	}
+
 	// === UPDATE CAMERA FROM PLAYER AFTER ALL UPDATES ===
 	camera := g.engine.GetCamera()
 	camera.SetPosition(g.player.Position)
@@ -656,81 +701,150 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 	campfirePos := mgl32.Vec3{5, float32(g.world.GetHeight(5, 5)) + 2.0, 5}
 	g.engine.EmitCampfire(campfirePos)
 
-	// Update underwater effect
-	if g.underwater != nil {
-		g.underwater.Update(dt)
-	}
-
-	// Raycast for block selection
-	lookDir := g.player.GetLookDirection()
-	result := physics.Raycast(g.player.Position, lookDir, 5.0, func(x, y, z int) block.Type {
-		return g.world.GetBlock(x, y, z)
-	})
-	if result.Hit {
-		g.targetBlock = &result
+	// Update animation state
+	if isMoving {
+		g.playerModel.IsMoving = true
+		// Walk phase updated in Render or Update of creature, but for manual control:
+		speed := float32(6.0)                                // Approx speed
+		g.playerModel.Velocity = mgl32.Vec3{speed, 0, speed} // Hack to trigger animation logic
 	} else {
-		g.targetBlock = nil
+		g.playerModel.IsMoving = false
+		g.playerModel.Velocity = mgl32.Vec3{0, 0, 0}
 	}
 
-	// Handle block interaction
-	isBreaking := input.IsMouseButtonPressed(glfw.MouseButtonLeft) && g.targetBlock != nil
-
+	// Handle block interaction and animation
 	if g.blockBreaker != nil {
-		if isBreaking {
-			// Start or continue breaking
-			targetPos := g.targetBlock.BlockPos
-			targetType := g.targetBlock.BlockType
-			def := block.GetDefinition(targetType)
+		lmbPressed := input.IsMouseButtonPressed(glfw.MouseButtonLeft)
 
-			// If we switched blocks, the breaker handles it (resets progress)
-			g.blockBreaker.StartBreaking(targetPos, def.BreakTime)
+		// Handle swing animation state
+		if lmbPressed {
+			g.playerModel.IsSwinging = true
+		} else {
+			g.playerModel.IsSwinging = false
+		}
 
-			// Update progress
-			broken := g.blockBreaker.Update(dt)
+		// Update player model (handles animation timers)
+		g.playerModel.Update(dt, g.playerModel.Position)
 
-			if broken {
-				// Block destroyed!
-				// Get block color for particles before destroying
-				destroyedBlock := g.world.GetBlock(targetPos[0], targetPos[1], targetPos[2])
-				blockColor := destroyedBlock.GetColor()
+		if lmbPressed {
+			// We have a target block and LMB is pressed
+			if g.targetBlock != nil {
+				targetPos := g.targetBlock.BlockPos
+				targetType := g.targetBlock.BlockType
+				def := block.GetDefinition(targetType)
 
-				// Destroy block
-				g.world.SetBlock(targetPos[0], targetPos[1], targetPos[2], block.Air)
-
-				// Stop breaking animation
-				g.blockBreaker.StopBreaking()
-
-				// Emit destruction particles
-				if ps := g.engine.GetParticleSystem(); ps != nil {
+				// Continuous particles while breaking
+				// Emit debris particles based on block color
+				if g.engine.GetParticleSystem() != nil && float32(rand.Float64()) < dt*10.0 { // Chance per frame proportional to dt
 					blockCenter := mgl32.Vec3{
 						float32(targetPos[0]) + 0.5,
 						float32(targetPos[1]) + 0.5,
 						float32(targetPos[2]) + 0.5,
 					}
-					particleColor := mgl32.Vec4{blockColor[0], blockColor[1], blockColor[2], 1.0}
-					ps.EmitExplosion(blockCenter, 12, particleColor)
+					// Offset slightly towards player/face
+					// Simple hack: just use center for now, or use normal from raycast if we had it easily here
+
+					// Random velocity out
+					vel := mgl32.Vec3{
+						(float32(rand.Float64()) - 0.5) * 2.0,
+						float32(rand.Float64()) * 2.0,
+						(float32(rand.Float64()) - 0.5) * 2.0,
+					}
+
+					color := def.Color
+					particleColor := mgl32.Vec4{color[0], color[1], color[2], 1.0}
+
+					g.engine.GetParticleSystem().Emit(blockCenter, vel, particleColor, 0.5, 0.1)
 				}
+
+				if !def.Indestructible {
+					// Apply tool efficiency
+					breakTime := def.BreakTime
+					selectedItem := g.inventory.GetSelectedBlock()
+
+					// Tool matching logic
+					switch selectedItem {
+					case block.Pickaxe:
+						if def.Material == block.MaterialStone {
+							breakTime /= 5.0 // 5x faster
+						}
+					case block.Shovel:
+						if selectedItem == block.Shovel && (targetType == block.Dirt || targetType == block.Grass || targetType == block.Sand || targetType == block.Gravel || targetType == block.Snow) {
+							breakTime /= 4.0 // 4x faster
+						}
+					case block.Axe:
+						if targetType == block.Wood || targetType == block.OakLog || targetType == block.BirchLog || targetType == block.SpruceLog {
+							breakTime /= 4.0 // 4x faster
+						}
+					}
+
+					// Start or continue breaking
+					g.blockBreaker.StartBreaking(targetPos, breakTime)
+					broken := g.blockBreaker.Update(dt)
+
+					if broken {
+						// Block destroyed!
+						destroyedBlock := g.world.GetBlock(targetPos[0], targetPos[1], targetPos[2])
+						blockColor := destroyedBlock.GetColor()
+
+						// Add to inventory
+						if destroyedBlock != block.Air {
+							g.inventory.AddBlock(destroyedBlock, 1)
+						}
+
+						// Destroy block
+						g.world.SetBlock(targetPos[0], targetPos[1], targetPos[2], block.Air)
+
+						// Stop breaking animation
+						g.blockBreaker.StopBreaking()
+
+						// Emit destruction particles
+						if ps := g.engine.GetParticleSystem(); ps != nil {
+							blockCenter := mgl32.Vec3{
+								float32(targetPos[0]) + 0.5,
+								float32(targetPos[1]) + 0.5,
+								float32(targetPos[2]) + 0.5,
+							}
+							particleColor := mgl32.Vec4{blockColor[0], blockColor[1], blockColor[2], 1.0}
+							ps.EmitExplosion(blockCenter, 12, particleColor)
+						}
+					}
+				} else {
+					// Indestructible block, stop breaking
+					g.blockBreaker.StopBreaking()
+				}
+			} else if g.blockBreaker.IsBreaking() {
+				// LMB is pressed but target is lost (missed hit or looking away)
+				// Small optimization: we could keep progress for a few frames,
+				// but for now we stop immediately as it's cleaner.
+				g.blockBreaker.StopBreaking()
 			}
 		} else {
-			// Stop breaking if button released or looking away
-			g.blockBreaker.StopBreaking()
-			g.blockBreaker.Update(dt) // Just to reset state if needed
+			// LMB not pressed, ensure breaker is reset
+			if g.blockBreaker.IsBreaking() {
+				g.blockBreaker.StopBreaking()
+			}
 		}
 	} else if g.wasMouseButtonJustPressed(input, glfw.MouseButtonLeft) && g.targetBlock != nil {
 		// Fallback for click-to-break if breaker not initialized
-		// Get block color for particles before destroying
-		destroyedBlock := g.world.GetBlock(g.targetBlock.BlockPos[0], g.targetBlock.BlockPos[1], g.targetBlock.BlockPos[2])
+		targetPos := g.targetBlock.BlockPos
+		destroyedBlock := g.world.GetBlock(targetPos[0], targetPos[1], targetPos[2])
 		blockColor := destroyedBlock.GetColor()
 
+		// Add to inventory
+		if destroyedBlock != block.Air {
+			g.inventory.AddBlock(destroyedBlock, 1)
+		}
+
 		// Destroy block
-		g.world.SetBlock(g.targetBlock.BlockPos[0], g.targetBlock.BlockPos[1], g.targetBlock.BlockPos[2], block.Air)
+		g.world.SetBlock(targetPos[0], targetPos[1], targetPos[2], block.Air)
 
 		// Emit destruction particles
 		if ps := g.engine.GetParticleSystem(); ps != nil {
 			blockCenter := mgl32.Vec3{
-				float32(g.targetBlock.BlockPos[0]) + 0.5,
-				float32(g.targetBlock.BlockPos[1]) + 0.5,
-				float32(g.targetBlock.BlockPos[2]) + 0.5,
+				float32(targetPos[0]) + 0.5,
+				float32(targetPos[1]) + 0.5,
+				float32(targetPos[2]) + 0.5,
 			}
 			particleColor := mgl32.Vec4{blockColor[0], blockColor[1], blockColor[2], 1.0}
 			ps.EmitExplosion(blockCenter, 12, particleColor)
@@ -740,8 +854,16 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 	if g.wasMouseButtonJustPressed(input, glfw.MouseButtonRight) && g.targetBlock != nil {
 		placePos := physics.GetPlacementPosition(*g.targetBlock)
 		selectedBlock := g.inventory.GetSelectedBlock()
-		if selectedBlock != block.Air {
+
+		// Only place if it's a "placeable" item (not a tool)
+		def := block.GetDefinition(selectedBlock)
+		isTool := selectedBlock == block.Pickaxe || selectedBlock == block.Axe || selectedBlock == block.Sword || selectedBlock == block.Shovel
+
+		if selectedBlock != block.Air && !isTool && (def.Solid || selectedBlock == block.Water) {
 			g.world.SetBlock(placePos[0], placePos[1], placePos[2], selectedBlock)
+
+			// Consume item
+			g.inventory.RemoveBlock()
 
 			// Emit placement particles
 			if ps := g.engine.GetParticleSystem(); ps != nil {
@@ -956,7 +1078,7 @@ func (g *Game) renderPlaying() {
 		// Render block breaking animation
 		if g.blockBreaker != nil {
 			viewProj := g.engine.GetViewProjection()
-			g.blockBreaker.Render(viewProj)
+			g.blockBreaker.Render(viewProj, float32(glfw.GetTime()))
 		}
 	}
 
@@ -973,13 +1095,28 @@ func (g *Game) renderPlaying() {
 			g.uiRenderer.DrawTargetInfo(def.Name)
 		}
 
-		// Hotbar with item counts
+		// Render held item (first person view model)
+		// We only render this if NOT in 3rd person, but for now we don't support toggle, so always render
+		// assuming 1st person is default.
+		// If 3rd person is implemented, we should hide this.
+		// Actually, let's just render it.
+		selectedItem := g.inventory.GetSelectedBlock()
+		viewProj := g.engine.GetViewProjection()
+		sunDir := g.sky.GetSunDirection()
+		// Use player model's swing phase for view model animation
+		g.creatureRenderer.RenderViewModel(selectedItem, float32(glfw.GetTime()), g.playerModel.SwingPhase, viewProj, sunDir)
+
+		// Hotbar with item counts and names
 		hotbarSlots := g.inventory.GetHotbarSlots()
 		counts := make([]int, len(hotbarSlots))
+		names := make([]string, len(hotbarSlots))
+		types := make([]block.Type, len(hotbarSlots)) // Added types
 		for i, slot := range hotbarSlots {
 			counts[i] = slot.Count
+			names[i] = slot.Name
+			types[i] = slot.BlockType // Populate type
 		}
-		g.uiRenderer.DrawHotbarWithCounts(g.inventory.SelectedIndex, g.inventory.GetHotbarColors(), counts)
+		g.uiRenderer.DrawHotbarWithCounts(g.inventory.SelectedIndex, g.inventory.GetHotbarColors(), types, counts, names)
 
 		// Debug panel
 		if g.settings.EnablePostProcess {
@@ -1018,13 +1155,14 @@ func (g *Game) renderPlaying() {
 			displayBlocks := make([]ui.BlockDisplayInfo, len(blocks))
 			for i, b := range blocks {
 				displayBlocks[i] = ui.BlockDisplayInfo{
+					Type:       b.BlockType, // Added type
 					Color:      b.Color,
 					Name:       b.Name,
 					Count:      b.TotalCount,
 					HotbarSlot: b.HotbarSlot,
 				}
 			}
-			g.uiRenderer.DrawInventoryPanel(displayBlocks, g.inventory.SelectedIndex)
+			g.uiRenderer.DrawInventoryPanel(displayBlocks, g.inventory.SelectedIndex, g.inventory.PanelSelectedIndex)
 		}
 
 		g.uiRenderer.EndFrame()

@@ -108,6 +108,8 @@ type Creature struct {
 	WalkPhase     float32 // 0-2π cycle for walk animation
 	IsMoving      bool    // Whether creature is currently moving
 	GroundY       float32 // Current ground level Y position
+	SwingPhase    float32 // 0-PI for swing animation (arm swing)
+	IsSwinging    bool    // Whether creature is currently swinging/attacking
 }
 
 // Generator creates procedural creatures
@@ -382,6 +384,27 @@ func (c *Creature) Update(dt float32, playerPos mgl32.Vec3) {
 	// Dampen velocity
 	c.Velocity[0] *= 0.9
 	c.Velocity[2] *= 0.9
+
+	// Update swing animation
+	if c.IsSwinging {
+		c.SwingPhase += dt * 15.0 // Speed of swing
+		if c.SwingPhase > math.Pi {
+			c.SwingPhase = 0 // Reset or loop? Reset is better for clicks.
+			// Ideally main logic controls IsSwinging, but we wrap phase here.
+			// Actually, let's keep it simple: if swinging, increment phase.
+			// If phase wraps, we can either stop swinging or loop.
+			// For continuous breaking, looping is good.
+			c.SwingPhase -= math.Pi
+		}
+	} else {
+		// Reset to 0 when not swinging
+		if c.SwingPhase > 0 {
+			c.SwingPhase += dt * 10.0
+			if c.SwingPhase > math.Pi {
+				c.SwingPhase = 0
+			}
+		}
+	}
 }
 
 func min32(a, b float32) float32 {
