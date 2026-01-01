@@ -465,9 +465,10 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 		g.movement.ToggleCrouch()
 	}
 
-	// === MOUSE LOOK FIRST ===
+	// Handle mouse look
 	dx, dy := input.GetMouseDelta()
-	sens := g.settings.MouseSensitivity
+	// Lower sensitivity by default
+	sens := g.settings.MouseSensitivity * 0.2
 	if g.settings.InvertY {
 		dy = -dy
 	}

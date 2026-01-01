@@ -76,8 +76,8 @@ func (w *World) Update(playerX, playerY, playerZ float64) {
 	// Update chunks around player
 	loadRequests := w.ChunkManager.UpdateAroundPlayer(playerX, playerZ)
 
-	// Load a few chunks per frame
-	maxLoadsPerFrame := 2
+	// Load more chunks per frame to reduce gaps
+	maxLoadsPerFrame := 4
 	for i := 0; i < len(loadRequests) && i < maxLoadsPerFrame; i++ {
 		req := loadRequests[i]
 		w.ChunkManager.LoadChunk(req.CX, req.CZ)
@@ -85,7 +85,8 @@ func (w *World) Update(playerX, playerY, playerZ float64) {
 
 	// Update dirty chunks
 	dirtyChunks := w.ChunkManager.GetDirtyChunks()
-	maxMeshesPerFrame := 2
+	// Process more meshes per frame to handle updates faster
+	maxMeshesPerFrame := 8
 	for i := 0; i < len(dirtyChunks) && i < maxMeshesPerFrame; i++ {
 		w.regenerateMesh(dirtyChunks[i])
 	}
@@ -98,7 +99,11 @@ func (w *World) Update(playerX, playerY, playerZ float64) {
 }
 
 // Render renders all visible chunks
+// Render renders all visible chunks
 func (w *World) Render() {
+	if w.ChunkRenderer == nil {
+		return
+	}
 	w.ChunkRenderer.Draw()
 }
 
