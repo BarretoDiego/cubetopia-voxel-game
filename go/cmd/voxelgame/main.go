@@ -467,8 +467,8 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 
 	// Handle mouse look
 	dx, dy := input.GetMouseDelta()
-	// Lower sensitivity by default
-	sens := g.settings.MouseSensitivity * 0.2
+	// Adjusted sensitivity (now that double-input is fixed)
+	sens := g.settings.MouseSensitivity * 0.5
 	if g.settings.InvertY {
 		dy = -dy
 	}

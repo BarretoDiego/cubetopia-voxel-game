@@ -108,8 +108,9 @@ func NewEngine(config Config) (*Engine, error) {
 
 	// Configure OpenGL
 	gl.Enable(gl.DEPTH_TEST)
-	// Disable face culling for now - blocks were appearing hollow
-	gl.Disable(gl.CULL_FACE)
+	// Enable face culling for performance
+	gl.Enable(gl.CULL_FACE)
+	gl.CullFace(gl.BACK)
 	gl.Enable(gl.MULTISAMPLE)
 
 	// Blending for transparent blocks
@@ -171,7 +172,8 @@ func (e *Engine) Run(onUpdate func(dt float32), onRender func()) {
 		glfw.PollEvents()
 
 		// Process input
-		e.processInput()
+		// Process input - REMOVED to avoid conflict with Game input handling
+		// e.processInput()
 
 		// Update
 		if e.onUpdate != nil {
@@ -377,11 +379,16 @@ void main() {
     
     vec3 lighting = vColor * (ambient + diffuse * 0.7) * ao;
     
-    // Distance fog
+    // Distance fog (Linear)
     float dist = length(uCameraPos - vWorldPos);
-    float fog = 1.0 - exp(-dist * 0.008);
-    vec3 fogColor = vec3(0.6, 0.7, 0.9);
+    float fogStart = 30.0;
+    float fogEnd = 75.0; // Slightly less than 5 chunks (80)
+    float fogFactor = clamp((dist - fogStart) / (fogEnd - fogStart), 0.0, 1.0);
     
-    fragColor = vec4(mix(lighting, fogColor, fog), 1.0);
+    vec3 fogColor = vec3(0.6, 0.8, 1.0); // Match clear color
+    
+    vec3 finalColor = mix(lighting, fogColor, fogFactor);
+    
+    fragColor = vec4(finalColor, 1.0);
 }
 ` + "\x00"
