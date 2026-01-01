@@ -86,7 +86,7 @@ func (w *World) Update(playerX, playerY, playerZ float64) {
 	// Update dirty chunks
 	dirtyChunks := w.ChunkManager.GetDirtyChunks()
 	// Process more meshes per frame to handle updates faster
-	maxMeshesPerFrame := 8
+	maxMeshesPerFrame := 32
 	for i := 0; i < len(dirtyChunks) && i < maxMeshesPerFrame; i++ {
 		w.regenerateMesh(dirtyChunks[i])
 	}

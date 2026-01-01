@@ -136,13 +136,14 @@ func (mr *MenuRenderer) RenderMenu(menu *Menu, screenWidth, screenHeight int) {
 	titleBarHeight := float32(60)
 	mr.uiRenderer.DrawRect(panelX, panelY, panelWidth, titleBarHeight, [4]float32{0.2, 0.3, 0.5, 1.0})
 
-	// Title indicator rectangle (since we can't render text)
-	titleWidth := float32(len(menu.Title) * 12)
-	mr.uiRenderer.DrawRect(
+	// Title indicator
+	titleScale := float32(3.0)
+	titleWidth := float32(len(menu.Title)*6) * titleScale
+	mr.uiRenderer.DrawText(
 		panelX+(panelWidth-titleWidth)/2,
-		panelY+20,
-		titleWidth,
-		20,
+		panelY+15,
+		titleScale,
+		menu.Title,
 		menu.TitleColor,
 	)
 
@@ -167,7 +168,7 @@ func (mr *MenuRenderer) RenderMenu(menu *Menu, screenWidth, screenHeight int) {
 			mr.uiRenderer.DrawRect(itemX, itemY, 4, itemHeight, menu.SelectedColor)
 		}
 
-		// Item text indicator (colored rectangles since no text)
+		// Item Text
 		var textColor [4]float32
 		if !item.Enabled {
 			textColor = menu.DisabledColor
@@ -179,12 +180,11 @@ func (mr *MenuRenderer) RenderMenu(menu *Menu, screenWidth, screenHeight int) {
 			textColor = menu.ItemColor
 		}
 
-		textWidth := float32(len(item.Text) * 8)
-		mr.uiRenderer.DrawRect(
+		mr.uiRenderer.DrawText(
 			itemX+20,
 			itemY+10,
-			textWidth,
-			itemHeight-20,
+			2.0, // Scale 2.0
+			item.Text,
 			textColor,
 		)
 
@@ -193,5 +193,5 @@ func (mr *MenuRenderer) RenderMenu(menu *Menu, screenWidth, screenHeight int) {
 
 	// Instructions indicator at bottom
 	instructY := panelY + panelHeight - 35
-	mr.uiRenderer.DrawRect(panelX+20, instructY, panelWidth-40, 2, [4]float32{0.4, 0.4, 0.4, 0.5})
+	mr.uiRenderer.DrawText(panelX+20, instructY, 1.5, "Use ARROWS to select, ENTER to confirm", [4]float32{0.7, 0.7, 0.7, 1.0})
 }

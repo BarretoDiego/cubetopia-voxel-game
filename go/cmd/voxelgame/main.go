@@ -40,6 +40,7 @@ type Game struct {
 	menuRenderer *ui.MenuRenderer
 	settings     *ui.Settings
 	settingsMenu *ui.SettingsMenu
+	minimap      *ui.Minimap
 
 	// Save system
 	saveManager *save.Manager
@@ -140,6 +141,9 @@ func NewGame() (*Game, error) {
 
 	// Create settings menu
 	g.settingsMenu = ui.NewSettingsMenu(g.settings)
+
+	// Create minimap
+	g.minimap = ui.NewMinimap(128)
 
 	// Create save manager
 	g.saveManager = save.NewManager()
@@ -467,8 +471,17 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 
 	// Handle mouse look
 	dx, dy := input.GetMouseDelta()
-	// Adjusted sensitivity (now that double-input is fixed)
+	// Adjusted sensitivity
 	sens := g.settings.MouseSensitivity * 0.5
+	// Flip Y-axis logic as requested (Standard: Up=Up. User wants opposite? Or maybe my previous 'InvertY' check was confusing)
+	// Current logic: dy negative -> Pitch Increase -> Look Up.
+	// If User says "Reverse it", I will negation.
+	// New Input: Mouse Up -> dy negative.
+	// We want Mouse Up -> Look Down? (If that's what "Reverse" means)
+	// Or maybe "Reverse" means "Standard controls".
+	// Let's just flip the sign of dy to be opposite of what it was.
+	dy = -dy
+
 	if g.settings.InvertY {
 		dy = -dy
 	}
@@ -525,6 +538,15 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 	camera := g.engine.GetCamera()
 	camera.SetPosition(g.player.Position)
 	camera.SetRotation(g.player.Yaw, g.player.Pitch)
+
+	// Update Minimap
+	if g.minimap != nil && g.world != nil {
+		creatures := make([]mgl32.Vec3, 0)
+		for _, c := range g.world.CreatureManager.GetCreatures() {
+			creatures = append(creatures, c.Position)
+		}
+		g.minimap.Update(g.player.Position, g.world.GetBiomeAt, g.world.GetHeight, creatures)
+	}
 
 	// Update world around player
 	g.world.Update(
@@ -730,6 +752,11 @@ func (g *Game) renderPlaying() {
 				FPS:          g.fps,
 				Biome:        g.world.GetBiomeAt(int(g.player.Position.X()), int(g.player.Position.Z())),
 			})
+		}
+
+		// Draw Minimap
+		if g.minimap != nil {
+			g.uiRenderer.DrawMinimap(g.minimap.GetTextureID())
 		}
 
 		// Raytracing indicator

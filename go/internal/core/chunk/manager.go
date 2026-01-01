@@ -110,13 +110,18 @@ func (m *Manager) LoadChunk(cx, cz int) *Chunk {
 	m.mu.RUnlock()
 
 	// Enforce chunk limit
-	if m.LoadedCount() >= m.maxLoadedChunks {
-		m.enforceChunkLimit()
+	// DISABLED: This was sorting by distance from origin (0,0) and unloading chunks
+	// near the player if the player was far away.
+	// UpdateAroundPlayer handles unloading correctly based on distance from player.
+	/*
 		if m.LoadedCount() >= m.maxLoadedChunks {
-			fmt.Printf("[ChunkManager] Chunk limit reached, cannot load %s\n", id)
-			return nil
+			m.enforceChunkLimit()
+			if m.LoadedCount() >= m.maxLoadedChunks {
+				fmt.Printf("[ChunkManager] Chunk limit reached, cannot load %s\n", id)
+				return nil
+			}
 		}
-	}
+	*/
 
 	// Check cache first
 	m.cacheMu.Lock()

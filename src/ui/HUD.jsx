@@ -3,6 +3,7 @@
  */
 
 import React from 'react';
+import { BlockPreview3D, CreaturePreview3D, ItemPreview3D } from './Preview3D.jsx';
 
 
 export function HUD({ children }) {
@@ -123,10 +124,9 @@ export function Hotbar({ blocks, selectedIndex, onSelect, inventory = {} }) {
             onClick={() => onSelect(index)}
           >
             <span className="key-hint">{index + 1}</span>
-            <div 
-              className="block-preview"
-              style={{ backgroundColor: block.color }}
-            />
+            <div className="hotbar-preview-container" style={{ width: '40px', height: '40px', pointerEvents: 'none' }}>
+              <BlockPreview3D color={block.color} size="100%" />
+            </div>
             <span className="block-count">{count}</span>
             <span className="block-name">{block.name}</span>
           </div>
@@ -192,17 +192,6 @@ export function UnderwaterOverlay({ isUnderwater }) {
 export function Gallery({ isOpen, onClose, blocks, creatures }) {
   const [activeTab, setActiveTab] = React.useState('blocks');
   
-  // Lazy load 3D previews to avoid initial performance hit
-  const [Preview3D, setPreview3D] = React.useState(null);
-  
-  React.useEffect(() => {
-    if (isOpen && !Preview3D) {
-      import('./Preview3D.jsx').then(module => {
-        setPreview3D(module);
-      });
-    }
-  }, [isOpen]);
-  
   if (!isOpen) return null;
   
   const creatures3D = [
@@ -255,33 +244,21 @@ export function Gallery({ isOpen, onClose, blocks, creatures }) {
       <div className="gallery-grid">
         {activeTab === 'blocks' && blocks?.map((block, i) => (
           <div key={i} className="gallery-item">
-            {Preview3D?.BlockPreview3D ? (
-              <Preview3D.BlockPreview3D color={block.color} size={120} />
-            ) : (
-              <div className="preview" style={{ backgroundColor: block.color }} />
-            )}
+            <BlockPreview3D color={block.color} size={120} />
             <div className="name">{block.name}</div>
           </div>
         ))}
         
         {activeTab === 'creatures' && creatures3D.map((creature, i) => (
           <div key={i} className="gallery-item">
-            {Preview3D?.CreaturePreview3D ? (
-              <Preview3D.CreaturePreview3D type={creature.type} color={creature.color} size={120} />
-            ) : (
-              <div className="preview" style={{ backgroundColor: creature.color }} />
-            )}
+            <CreaturePreview3D type={creature.type} color={creature.color} size={120} />
             <div className="name">{creature.name}</div>
           </div>
         ))}
         
         {activeTab === 'items' && items3D.map((item, i) => (
           <div key={i} className="gallery-item">
-            {Preview3D?.ItemPreview3D ? (
-              <Preview3D.ItemPreview3D type={item.type} color={item.color} size={120} />
-            ) : (
-              <div className="preview" style={{ backgroundColor: item.color }} />
-            )}
+            <ItemPreview3D type={item.type} color={item.color} size={120} />
             <div className="name">{item.name}</div>
           </div>
         ))}

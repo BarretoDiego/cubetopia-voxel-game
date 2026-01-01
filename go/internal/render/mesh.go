@@ -60,6 +60,14 @@ func NewChunkMesh(data *chunk.MeshData) *ChunkMesh {
 	gl.VertexAttribPointerWithOffset(3, 1, gl.FLOAT, false, stride, 9*4)
 	gl.EnableVertexAttribArray(3)
 
+	// TexCoord attribute (location 4)
+	gl.VertexAttribPointerWithOffset(4, 2, gl.FLOAT, false, stride, 10*4)
+	gl.EnableVertexAttribArray(4)
+
+	// MaterialID attribute (location 5)
+	gl.VertexAttribPointerWithOffset(5, 1, gl.FLOAT, false, stride, 12*4)
+	gl.EnableVertexAttribArray(5)
+
 	// Unbind
 	gl.BindVertexArray(0)
 

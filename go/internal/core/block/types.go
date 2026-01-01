@@ -42,13 +42,27 @@ const (
 	BlockTypeCount // Total number of block types
 )
 
+// MaterialType determines how the block is rendered
+type MaterialType uint8
+
+const (
+	MaterialStandard MaterialType = iota
+	MaterialFoliage               // Grass, Flowers (wind sway, no culling)
+	MaterialLiquid                // Water (transparent, animated)
+	MaterialGlass                 // Ice, Glass (transparent, shiny)
+	MaterialStone                 // Stone (roughness)
+)
+
+// TextureID represents an index in the texture array
+type TextureID uint16
+
 // Definition contains all properties for a block type
 type Definition struct {
 	Name           string
 	Solid          bool
 	Transparent    bool
 	Collidable     bool
-	Color          [3]float32 // RGB normalized [0-1]
+	Color          [3]float32 // RGB normalized [0-1] (Fallback/Tint)
 	BreakTime      float32
 	Liquid         bool
 	Opacity        float32
@@ -56,6 +70,13 @@ type Definition struct {
 	Damages        bool // Damages player on contact
 	Indestructible bool
 	Emissive       float32 // Light emission
+
+	// New Visual Properties
+	Material      MaterialType
+	TextureTop    TextureID
+	TextureSide   TextureID
+	TextureBottom TextureID
+	HasCustomMesh bool // For "fluffy" geometry
 }
 
 // String returns the block type name

@@ -6,8 +6,16 @@ import (
 )
 
 // Vertex data layout for OpenGL
-// Position (3 floats) + Normal (3 floats) + Color (3 floats) + AO (1 float) = 10 floats per vertex
-const VertexSize = 10
+// Position (3) + Normal (3) + Color (3) + AO (1) + TexCoord (2) + MaterialID (1) = 13 floats
+const VertexSize = 13
+
+// Standard UV coordinates for a quad
+var faceUVs = [4][2]float32{
+	{0, 0},
+	{1, 0},
+	{1, 1},
+	{0, 1},
+}
 
 // Face vertices for a cube
 var faceVertices = map[string][4][3]float32{
@@ -149,6 +157,7 @@ func (m *Mesher) addFace(
 	baseIndex := uint32(len(m.vertices) / VertexSize)
 
 	color := blockDef.Color
+	materialID := float32(blockDef.Material)
 
 	// Add 4 vertices for the face
 	for i := 0; i < 4; i++ {
@@ -173,6 +182,10 @@ func (m *Mesher) addFace(
 		m.vertices = append(m.vertices, color[0]*aoFactor, color[1]*aoFactor, color[2]*aoFactor)
 		// AO value
 		m.vertices = append(m.vertices, ao)
+		// Texture Coordinates
+		m.vertices = append(m.vertices, faceUVs[i][0], faceUVs[i][1])
+		// Material ID
+		m.vertices = append(m.vertices, materialID)
 	}
 
 	// Two triangles per face

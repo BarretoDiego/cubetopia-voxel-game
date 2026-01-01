@@ -228,16 +228,47 @@ func (g *Generator) getTerrainHeight(wx, wz int, biome Biome) int {
 
 	// FBM for general terrain
 	fbmValue := g.heightFBM.Sample2D(g.heightNoise, float64(wx), float64(wz))
-	height += fbmValue * TerrainAmplitude * biome.HeightMod
+
+	// Smooth height modulation based on temperature
+	// This prevents sharp cliffs between biomes by blending the HeightMod
+	temperature := g.biomeFBM.Sample2D(g.biomeNoise, float64(wx), float64(wz))
+
+	// Base height mod (Plains/Forest)
+	heightMod := 0.5
+
+	// Adjust based on temperature (extreme temps = higher/rougher terrain)
+	if temperature < -0.3 {
+		// Snow/Mountains
+		factor := (temperature + 0.3) * -5.0 // 0..1
+		heightMod = 0.5 + factor*1.0         // 0.5 .. 1.5
+	} else if temperature > 0.3 {
+		// Desert/Plains - flattening
+		factor := (temperature - 0.3) * 5.0
+		heightMod = 0.5 - factor*0.2 // 0.5 .. 0.3
+	}
+
+	// Apply smoothed modulation
+	height += fbmValue * TerrainAmplitude * heightMod
 
 	// High frequency detail
 	detail := g.detailNoise.Noise2D(float64(wx)*0.1, float64(wz)*0.1) * 2
 	height += detail
 
-	// Mountains get ridged noise
+	// Mountains get ridged noise (blended)
 	if biome.Name == "mountains" {
 		ridged := g.heightFBM.Ridged2D(g.heightNoise, float64(wx)*2, float64(wz)*2)
 		height += ridged * 20
+	} else if temperature < -0.2 && temperature > -0.4 {
+		// Transition to mountains - add some ridged noise seamlessly
+		ridged := g.heightFBM.Ridged2D(g.heightNoise, float64(wx)*2, float64(wz)*2)
+		blend := (temperature + 0.2) / -0.2 // 0 at -0.2, 1 at -0.4
+		// Wait, math: if temp = -0.3. top = -0.1. bottom = -0.2. result = 0.5.
+		// if temp = -0.4. top = -0.2. bottom = -0.2. result = 1.0.
+		blend = absDouble(blend) // Clamp?
+		if blend > 1.0 {
+			blend = 1.0
+		}
+		height += ridged * 10 * blend
 	}
 
 	result := int(height)
@@ -248,6 +279,13 @@ func (g *Generator) getTerrainHeight(wx, wz int, biome Biome) int {
 		result = chunk.Height - 10
 	}
 	return result
+}
+
+func absDouble(n float64) float64 {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // getUndergroundBlock determines block type underground

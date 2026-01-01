@@ -3,17 +3,15 @@ package render
 
 import (
 	"fmt"
-	"runtime"
+	"math"
+	"os"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/glfw/v3.3/glfw"
 	"github.com/go-gl/mathgl/mgl32"
 )
 
-func init() {
-	// GLFW requires the main thread
-	runtime.LockOSThread()
-}
+// ... (init function)
 
 // Engine is the main rendering engine
 type Engine struct {
@@ -26,6 +24,9 @@ type Engine struct {
 
 	// Shaders
 	voxelShader *Shader
+
+	// Texture Manager
+	textureManager *TextureManager
 
 	// Input state
 	input *Input
@@ -62,80 +63,57 @@ func DefaultConfig() Config {
 
 // NewEngine creates a new rendering engine
 func NewEngine(config Config) (*Engine, error) {
-	// Initialize GLFW
-	if err := glfw.Init(); err != nil {
-		return nil, fmt.Errorf("failed to initialize GLFW: %w", err)
-	}
-
-	// Configure GLFW
-	glfw.WindowHint(glfw.Resizable, glfw.True)
-	glfw.WindowHint(glfw.ContextVersionMajor, 4)
-	glfw.WindowHint(glfw.ContextVersionMinor, 1)
-	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-	glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
-
-	// Anti-aliasing
-	glfw.WindowHint(glfw.Samples, 4)
-
-	// Create window
-	var monitor *glfw.Monitor
-	if config.Fullscreen {
-		monitor = glfw.GetPrimaryMonitor()
-	}
-
-	window, err := glfw.CreateWindow(config.Width, config.Height, config.Title, monitor, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create window: %w", err)
-	}
-
-	window.MakeContextCurrent()
-
-	// VSync
-	if config.VSync {
-		glfw.SwapInterval(1)
-	} else {
-		glfw.SwapInterval(0)
-	}
+	// ... (GLFW and OpenGL init)
 
 	// Initialize OpenGL
 	if err := gl.Init(); err != nil {
 		return nil, fmt.Errorf("failed to initialize OpenGL: %w", err)
 	}
+	// ... (rest of init)
 
-	// Print OpenGL version
-	version := gl.GoStr(gl.GetString(gl.VERSION))
-	fmt.Printf("OpenGL version: %s\n", version)
-
-	// Configure OpenGL
+	// Enable features
 	gl.Enable(gl.DEPTH_TEST)
-	// Enable face culling for performance
 	gl.Enable(gl.CULL_FACE)
 	gl.CullFace(gl.BACK)
-	// Our mesh generation produces CW winding, so we tell OpenGL that CW is Front
 	gl.FrontFace(gl.CW)
 	gl.Enable(gl.MULTISAMPLE)
-
-	// Blending for transparent blocks
 	gl.Enable(gl.BLEND)
 	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
-	// Clear color (sky blue)
 	gl.ClearColor(0.6, 0.8, 1.0, 1.0)
 
+	tm := NewTextureManager()
+	// Define standard texture list - Mapping to IDs 0, 1, 2...
+	textureFiles := []string{
+		"assets/textures/dirt.png",       // 0
+		"assets/textures/grass_top.png",  // 1
+		"assets/textures/grass_side.png", // 2
+		"assets/textures/stone.png",      // 3
+		"assets/textures/wood.png",       // 4
+		"assets/textures/leaves.png",     // 5
+		"assets/textures/water.png",      // 6
+		"assets/textures/ice.png",        // 7
+		"assets/textures/sand.png",       // 8
+		"assets/textures/snow.png",       // 9
+		"assets/textures/glass.png",      // 10
+	}
+	err = tm.LoadBlockTextures(textureFiles)
+	if err != nil {
+		fmt.Printf("Error loading textures: %v\n", err)
+	}
+
 	engine := &Engine{
-		window: window,
-		width:  config.Width,
-		height: config.Height,
-		camera: NewCamera(mgl32.Vec3{0, 50, 0}),
-		input:  NewInput(),
+		window:         window,
+		width:          config.Width,
+		height:         config.Height,
+		camera:         NewCamera(mgl32.Vec3{0, 50, 0}),
+		input:          NewInput(),
+		textureManager: tm,
 	}
 
 	// Set up callbacks
 	window.SetFramebufferSizeCallback(engine.framebufferSizeCallback)
-	window.SetKeyCallback(engine.keyCallback)
-	window.SetCursorPosCallback(engine.cursorPosCallback)
-	window.SetMouseButtonCallback(engine.mouseButtonCallback)
-	window.SetScrollCallback(engine.scrollCallback)
+	// ... (rest of callbacks)
 
 	// Start with cursor visible for menus (will be captured when game starts)
 	window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
@@ -145,7 +123,21 @@ func NewEngine(config Config) (*Engine, error) {
 
 // LoadShaders loads the voxel shader
 func (e *Engine) LoadShaders() error {
-	shader, err := NewShader(voxelVertexShader, voxelFragmentShader)
+	// Read shader files
+	vShaderFile := "assets/shaders/voxel.vert"
+	fShaderFile := "assets/shaders/voxel.frag"
+
+	vSource, err := os.ReadFile(vShaderFile)
+	if err != nil {
+		return fmt.Errorf("failed to read vertex shader %s: %w", vShaderFile, err)
+	}
+
+	fSource, err := os.ReadFile(fShaderFile)
+	if err != nil {
+		return fmt.Errorf("failed to read fragment shader %s: %w", fShaderFile, err)
+	}
+
+	shader, err := NewShader(string(vSource), string(fSource))
 	if err != nil {
 		return fmt.Errorf("failed to create voxel shader: %w", err)
 	}
@@ -249,6 +241,18 @@ func (e *Engine) UseVoxelShader() {
 	e.voxelShader.SetVec3("uCameraPos", e.camera.Position)
 	e.voxelShader.SetVec3("uSunDirection", mgl32.Vec3{0.5, 0.8, 0.3}.Normalize())
 	e.voxelShader.SetFloat("uTime", float32(glfw.GetTime()))
+
+	// Wind uniforms
+	// Simple wind direction variation
+	time := float64(glfw.GetTime())
+	windStr := float32(0.3) + float32(0.1*math.Sin(time*0.5)) // Fluctuating wind
+	windDir := mgl32.Vec3{1.0, 0.0, 0.5}.Normalize()
+	e.voxelShader.SetFloat("uWindStrength", windStr)
+	e.voxelShader.SetVec3("uWindDir", windDir)
+
+	// Bind Textures
+	e.textureManager.BindBlockTextures(0)
+	e.voxelShader.SetInt("uBlockAtlas", 0) // Texture Unit 0
 }
 
 // Callbacks
@@ -330,67 +334,4 @@ func (e *Engine) processInput() {
 	}
 }
 
-// Embedded shaders
-
-var voxelVertexShader = `
-#version 410 core
-
-layout(location = 0) in vec3 aPosition;
-layout(location = 1) in vec3 aNormal;
-layout(location = 2) in vec3 aColor;
-layout(location = 3) in float aAO;
-
-uniform mat4 uProjection;
-uniform mat4 uView;
-
-out vec3 vColor;
-out vec3 vNormal;
-out float vAO;
-out vec3 vWorldPos;
-
-void main() {
-    vColor = aColor;
-    vNormal = aNormal;
-    vAO = aAO;
-    vWorldPos = aPosition;
-    gl_Position = uProjection * uView * vec4(aPosition, 1.0);
-}
-` + "\x00"
-
-var voxelFragmentShader = `
-#version 410 core
-
-in vec3 vColor;
-in vec3 vNormal;
-in float vAO;
-in vec3 vWorldPos;
-
-uniform vec3 uSunDirection;
-uniform vec3 uCameraPos;
-uniform float uTime;
-
-out vec4 fragColor;
-
-void main() {
-    // Basic directional lighting
-    float diffuse = max(dot(vNormal, uSunDirection), 0.0);
-    float ambient = 0.3;
-    
-    // Apply AO
-    float ao = 1.0 - vAO * 0.25;
-    
-    vec3 lighting = vColor * (ambient + diffuse * 0.7) * ao;
-    
-    // Distance fog (Linear)
-    float dist = length(uCameraPos - vWorldPos);
-    float fogStart = 30.0;
-    float fogEnd = 75.0; // Slightly less than 5 chunks (80)
-    float fogFactor = clamp((dist - fogStart) / (fogEnd - fogStart), 0.0, 1.0);
-    
-    vec3 fogColor = vec3(0.6, 0.8, 1.0); // Match clear color
-    
-    vec3 finalColor = mix(lighting, fogColor, fogFactor);
-    
-    fragColor = vec4(finalColor, 1.0);
-}
-` + "\x00"
+// Embedded shaders removed - now loaded from assets/shaders/

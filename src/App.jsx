@@ -49,7 +49,8 @@ import {
   EnhancedHotbar,
   MainMenu,
   PauseMenu,
-  GameCursor
+  GameCursor,
+  PreviewCanvas // [NEW] Use shared preview canvas
 } from './ui/index.js';
 
 // Systems
@@ -786,6 +787,9 @@ function App() {
 
   return (
     <div style={{ width: '100%', height: '100vh', background: '#000' }}>
+      {/* Shared Canvas for UI 3D Elements */}
+      <PreviewCanvas />
+
       <Canvas
         camera={{ fov: 75, near: 0.1, far: 500 }}
         onCreated={({ gl }) => {

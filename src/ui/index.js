@@ -15,3 +15,10 @@ export { EnhancedHotbar } from "./EnhancedHotbar.jsx";
 export { MainMenu } from "./MainMenu.jsx";
 export { PauseMenu } from "./PauseMenu.jsx";
 export { GameCursor } from "./GameCursor.jsx";
+export {
+  PreviewCanvas,
+  Preview3D,
+  BlockPreview3D,
+  CreaturePreview3D,
+  ItemPreview3D,
+} from "./Preview3D.jsx";
