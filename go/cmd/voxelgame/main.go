@@ -180,11 +180,47 @@ func NewGame() (*Game, error) {
 	// Create inventory
 	g.inventory = ui.NewInventory()
 
-	// World will be created when starting new game
-	g.world = nil
-	g.player = nil
+	// AUTO-START: Skip menu for now and start directly in playing mode
+	fmt.Println("[DEBUG] Auto-starting new game...")
+	g.autoStartGame()
 
 	return g, nil
+}
+
+// autoStartGame starts a new game automatically (skip menu)
+func (g *Game) autoStartGame() {
+	// Create world with random seed
+	seed := time.Now().UnixNano()
+	fmt.Printf("World seed: %d\n", seed)
+
+	g.world = world.NewWorld(seed)
+
+	// Get spawn position
+	spawnX, spawnY, spawnZ := g.world.GetSpawnPosition()
+	spawnPos := mgl32.Vec3{float32(spawnX), float32(spawnY), float32(spawnZ)}
+	fmt.Printf("Spawn position: %.1f, %.1f, %.1f\n", spawnX, spawnY, spawnZ)
+
+	// Create player with physics
+	g.player = physics.NewPlayer(spawnPos, func(x, y, z int) block.Type {
+		return g.world.GetBlock(x, y, z)
+	})
+
+	// Enable fly mode by default for easier navigation
+	g.player.IsFlying = true
+	fmt.Println("[DEBUG] Fly mode enabled by default")
+
+	// Create enhanced movement
+	g.movement = physics.NewEnhancedMovement()
+
+	// Switch to playing state
+	g.stateManager.SetState(ui.StatePlaying)
+	g.mainMenu.IsVisible = false
+
+	// Capture mouse for FPS controls
+	g.engine.SetCursorMode(true)
+
+	// Enable debug by default
+	g.settings.EnablePostProcess = true
 }
 
 func (g *Game) setupMenus() {

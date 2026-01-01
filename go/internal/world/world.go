@@ -124,10 +124,16 @@ func (w *World) GetSpawnPosition() (x, y, z float64) {
 	// Load spawn chunk
 	w.ChunkManager.LoadChunk(0, 0)
 
-	// Get terrain height
+	// Get terrain height - find highest non-air block
 	height := w.GetHeight(0, 0)
 
-	return spawnX, float64(height) + 2, spawnZ
+	// Spawn well above terrain to avoid being stuck
+	spawnY := float64(height) + 10
+	if spawnY < 50 {
+		spawnY = 50 // Minimum spawn height
+	}
+
+	return spawnX, spawnY, spawnZ
 }
 
 // GetStats returns world statistics
