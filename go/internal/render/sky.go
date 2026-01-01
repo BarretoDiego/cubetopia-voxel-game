@@ -220,6 +220,11 @@ float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
 }
 
+vec2 hash2(vec2 p) {
+	p = vec2(dot(p,vec2(127.1,311.7)), dot(p,vec2(269.5,183.3)));
+	return fract(sin(p)*43758.5453);
+}
+
 float hash3(vec3 p) {
     return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
 }
@@ -261,7 +266,7 @@ float voronoi(vec2 p) {
     for (int y = -1; y <= 1; y++) {
         for (int x = -1; x <= 1; x++) {
             vec2 neighbor = vec2(float(x), float(y));
-            vec2 point = hash(i + neighbor) * 0.5 + 0.25;
+            vec2 point = hash2(i + neighbor) * 0.5 + 0.25;
             vec2 diff = neighbor + point - f;
             float dist = length(diff);
             minDist = min(minDist, dist);

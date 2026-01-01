@@ -712,6 +712,17 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 		g.playerModel.Velocity = mgl32.Vec3{0, 0, 0}
 	}
 
+	// Raycast for block selection
+	lookDir := g.player.GetLookDirection()
+	result := physics.Raycast(g.player.Position, lookDir, 5.0, func(x, y, z int) block.Type {
+		return g.world.GetBlock(x, y, z)
+	})
+	if result.Hit {
+		g.targetBlock = &result
+	} else {
+		g.targetBlock = nil
+	}
+
 	// Handle block interaction and animation
 	if g.blockBreaker != nil {
 		lmbPressed := input.IsMouseButtonPressed(glfw.MouseButtonLeft)
@@ -1102,7 +1113,10 @@ func (g *Game) renderPlaying() {
 		// Actually, let's just render it.
 		selectedItem := g.inventory.GetSelectedBlock()
 		viewProj := g.engine.GetViewProjection()
-		sunDir := g.sky.GetSunDirection()
+		sunDir := mgl32.Vec3{0.5, 0.8, 0.3}.Normalize()
+		if g.sky != nil {
+			sunDir = g.sky.GetSunDirection()
+		}
 		// Use player model's swing phase for view model animation
 		g.creatureRenderer.RenderViewModel(selectedItem, float32(glfw.GetTime()), g.playerModel.SwingPhase, viewProj, sunDir)
 
