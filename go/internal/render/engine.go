@@ -111,6 +111,8 @@ func NewEngine(config Config) (*Engine, error) {
 	// Enable face culling for performance
 	gl.Enable(gl.CULL_FACE)
 	gl.CullFace(gl.BACK)
+	// Our mesh generation produces CW winding, so we tell OpenGL that CW is Front
+	gl.FrontFace(gl.CW)
 	gl.Enable(gl.MULTISAMPLE)
 
 	// Blending for transparent blocks
