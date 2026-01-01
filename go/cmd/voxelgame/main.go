@@ -205,7 +205,7 @@ func (g *Game) setupMenus() {
 
 // Menu callbacks
 func (g *Game) startNewGame() {
-	fmt.Println("Starting new game...")
+	fmt.Println("[DEBUG] startNewGame called")
 
 	// Create world with random seed
 	seed := time.Now().UnixNano()
@@ -229,6 +229,10 @@ func (g *Game) startNewGame() {
 	// Switch to playing state
 	g.stateManager.SetState(ui.StatePlaying)
 	g.mainMenu.IsVisible = false
+
+	// Capture mouse for FPS controls
+	g.engine.SetCursorMode(true)
+	fmt.Println("[DEBUG] Entered playing state")
 }
 
 func (g *Game) loadGame() {
@@ -256,7 +260,9 @@ func (g *Game) loadGame() {
 	g.stateManager.SetState(ui.StatePlaying)
 	g.mainMenu.IsVisible = false
 
-	fmt.Println("Game loaded!")
+	// Capture mouse for FPS controls
+	g.engine.SetCursorMode(true)
+	fmt.Println("[DEBUG] Game loaded, entered playing state")
 }
 
 func (g *Game) openSettings() {
@@ -265,13 +271,15 @@ func (g *Game) openSettings() {
 }
 
 func (g *Game) quitGame() {
-	fmt.Println("Goodbye!")
-	os.Exit(0)
+	fmt.Println("[DEBUG] quitGame called")
+	g.engine.CloseWindow()
 }
 
 func (g *Game) resumeGame() {
+	fmt.Println("[DEBUG] resumeGame called")
 	g.stateManager.SetState(ui.StatePlaying)
 	g.pauseMenu.IsVisible = false
+	g.engine.SetCursorMode(true) // Capture mouse again
 }
 
 func (g *Game) saveGame() {
@@ -295,6 +303,7 @@ func (g *Game) saveGame() {
 }
 
 func (g *Game) returnToMainMenu() {
+	fmt.Println("[DEBUG] returnToMainMenu called")
 	// Cleanup world
 	if g.world != nil {
 		g.world.Cleanup()
@@ -305,6 +314,9 @@ func (g *Game) returnToMainMenu() {
 	g.stateManager.SetState(ui.StateMainMenu)
 	g.mainMenu.IsVisible = true
 	g.pauseMenu.IsVisible = false
+
+	// Show cursor for menu
+	g.engine.SetCursorMode(false)
 }
 
 // Run starts the game loop
@@ -356,8 +368,10 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 
 	// Pause
 	if g.wasKeyJustPressed(input, glfw.KeyEscape) || g.wasKeyJustPressed(input, glfw.KeyP) {
+		fmt.Println("[DEBUG] Pausing game")
 		g.stateManager.SetState(ui.StatePaused)
 		g.pauseMenu.IsVisible = true
+		g.engine.SetCursorMode(false) // Show cursor for menu
 		return
 	}
 
@@ -591,10 +605,29 @@ func (g *Game) Render() {
 }
 
 func (g *Game) renderMainMenu() {
-	// Dark background
+	// Simple background to verify rendering works
 	if g.uiRenderer != nil {
 		g.uiRenderer.BeginFrame()
-		g.menuRenderer.RenderMenu(g.mainMenu, g.screenWidth, g.screenHeight)
+
+		// Draw a large visible rectangle to test
+		g.uiRenderer.DrawRect(100, 100, float32(g.screenWidth-200), float32(g.screenHeight-200), [4]float32{0.2, 0.3, 0.5, 1.0})
+
+		// Draw title area
+		g.uiRenderer.DrawRect(float32(g.screenWidth)/2-150, 150, 300, 60, [4]float32{0.3, 0.4, 0.7, 1.0})
+
+		// Draw menu items
+		for i := 0; i < 4; i++ {
+			y := float32(250 + i*70)
+			bgColor := [4]float32{0.15, 0.15, 0.25, 0.9}
+			if i == g.mainMenu.SelectedIndex {
+				bgColor = [4]float32{0.4, 0.5, 0.8, 1.0}
+			}
+			g.uiRenderer.DrawRect(float32(g.screenWidth)/2-120, y, 240, 50, bgColor)
+		}
+
+		// Instructions at bottom
+		g.uiRenderer.DrawRect(float32(g.screenWidth)/2-200, float32(g.screenHeight)-80, 400, 30, [4]float32{0.1, 0.1, 0.15, 0.8})
+
 		g.uiRenderer.EndFrame()
 	}
 }

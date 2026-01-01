@@ -134,8 +134,8 @@ func NewEngine(config Config) (*Engine, error) {
 	window.SetMouseButtonCallback(engine.mouseButtonCallback)
 	window.SetScrollCallback(engine.scrollCallback)
 
-	// Capture mouse for FPS controls
-	window.SetInputMode(glfw.CursorMode, glfw.CursorDisabled)
+	// Start with cursor visible for menus (will be captured when game starts)
+	window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
 
 	return engine, nil
 }
@@ -260,10 +260,7 @@ func (e *Engine) framebufferSizeCallback(w *glfw.Window, width, height int) {
 }
 
 func (e *Engine) keyCallback(w *glfw.Window, key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) {
-	if key == glfw.KeyEscape && action == glfw.Press {
-		w.SetShouldClose(true)
-	}
-
+	// Don't auto-close on ESC - let game handle it
 	e.input.HandleKey(key, action)
 }
 
@@ -277,6 +274,20 @@ func (e *Engine) mouseButtonCallback(w *glfw.Window, button glfw.MouseButton, ac
 
 func (e *Engine) scrollCallback(w *glfw.Window, xoff, yoff float64) {
 	e.input.HandleScroll(xoff, yoff)
+}
+
+// SetCursorMode sets the cursor mode (normal for menus, disabled for gameplay)
+func (e *Engine) SetCursorMode(disabled bool) {
+	if disabled {
+		e.window.SetInputMode(glfw.CursorMode, glfw.CursorDisabled)
+	} else {
+		e.window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
+	}
+}
+
+// CloseWindow closes the game window
+func (e *Engine) CloseWindow() {
+	e.window.SetShouldClose(true)
 }
 
 func (e *Engine) processInput() {
