@@ -94,6 +94,9 @@ type Generator struct {
 	seed int64
 	rng  *vmath.SeededRNG
 
+	// Configuration
+	Config GeneratorConfig
+
 	// Noise generators
 	heightNoise *noise.SimplexNoise
 	biomeNoise  *noise.SimplexNoise
@@ -106,11 +109,30 @@ type Generator struct {
 	caveFBM   *noise.FBM
 }
 
+// GeneratorConfig holds terrain generation settings
+type GeneratorConfig struct {
+	SeaLevel         int
+	TerrainAmplitude float32
+	TreeDensity      float32
+	CaveFrequency    float32
+}
+
+// DefaultConfig returns default generation config
+func DefaultConfig() GeneratorConfig {
+	return GeneratorConfig{
+		SeaLevel:         12,
+		TerrainAmplitude: 30.0,
+		TreeDensity:      0.05,
+		CaveFrequency:    0.6,
+	}
+}
+
 // NewGenerator creates a new terrain generator with the given seed
 func NewGenerator(seed int64) *Generator {
 	g := &Generator{
 		seed:        seed,
 		rng:         vmath.NewSeededRNG(seed),
+		Config:      DefaultConfig(), // Use defaults initially
 		heightNoise: noise.NewSimplexNoise(seed),
 		biomeNoise:  noise.NewSimplexNoise(seed + 1000),
 		caveNoise:   noise.NewSimplexNoise(seed + 2000),
@@ -191,7 +213,7 @@ func (g *Generator) generateColumn(c *chunk.Chunk, lx, lz, wx, wz int) {
 		} else if y == baseHeight {
 			// Surface
 			blockType = g.getSurfaceBlock(y, biome)
-		} else if y < SeaLevel && biome.HasWater {
+		} else if y < g.Config.SeaLevel && biome.HasWater {
 			// Water
 			blockType = block.Water
 		}
@@ -224,7 +246,7 @@ func (g *Generator) getBiome(wx, wz int) Biome {
 
 // getTerrainHeight calculates terrain height at a position
 func (g *Generator) getTerrainHeight(wx, wz int, biome Biome) int {
-	height := float64(TerrainBaseHeight)
+	height := float64(20) // Base height hardcoded replacing TerrainBaseHeight constant
 
 	// FBM for general terrain
 	fbmValue := g.heightFBM.Sample2D(g.heightNoise, float64(wx), float64(wz))
@@ -247,8 +269,8 @@ func (g *Generator) getTerrainHeight(wx, wz int, biome Biome) int {
 		heightMod = 0.5 - factor*0.2 // 0.5 .. 0.3
 	}
 
-	// Apply smoothed modulation
-	height += fbmValue * TerrainAmplitude * heightMod
+	// Apply smoothed modulation and configured amplitude
+	height += fbmValue * float64(g.Config.TerrainAmplitude) * heightMod
 
 	// High frequency detail
 	detail := g.detailNoise.Noise2D(float64(wx)*0.1, float64(wz)*0.1) * 2
@@ -292,7 +314,7 @@ func absDouble(n float64) float64 {
 func (g *Generator) getUndergroundBlock(wx, y, wz int, biome Biome) block.Type {
 	// Caves
 	caveValue := g.caveFBM.Sample3D(g.caveNoise, float64(wx), float64(y), float64(wz))
-	if caveValue > 0.6 && y > 5 {
+	if caveValue > float64(g.Config.CaveFrequency) && y > 5 {
 		return block.Air
 	}
 
@@ -314,7 +336,7 @@ func (g *Generator) getUndergroundBlock(wx, y, wz int, biome Biome) block.Type {
 
 // getSurfaceBlock determines the surface block
 func (g *Generator) getSurfaceBlock(height int, biome Biome) block.Type {
-	if height <= SeaLevel+2 && biome.Name != "desert" {
+	if height <= g.Config.SeaLevel+2 && biome.Name != "desert" {
 		return block.Sand
 	}
 	return biome.Surface
@@ -330,14 +352,17 @@ func (g *Generator) generateStructures(c *chunk.Chunk, startX, startZ int) {
 			wz := startZ + lz
 			height := c.GetHeight(lx, lz)
 
-			if height <= SeaLevel {
+			if height <= g.Config.SeaLevel {
 				continue
 			}
 
 			biome := g.getBiome(wx, wz)
 
-			// Trees
-			if biome.HasTrees && chunkRng.Next() < biome.TreeChance {
+			// Trees - scale chance by tree density config
+			// Base chance is for density 0.05. Scaling: config / 0.05
+			densityMultiplier := g.Config.TreeDensity / 0.05
+
+			if biome.HasTrees && chunkRng.Next() < biome.TreeChance*float64(densityMultiplier) {
 				g.generateTree(c, lx, height+1, lz, biome.TreeType, chunkRng)
 			}
 
@@ -410,6 +435,11 @@ func (g *Generator) generateCactus(c *chunk.Chunk, lx, ly, lz int, rng *vmath.Se
 	}
 }
 
+// SetConfig updates the generator configuration
+func (g *Generator) SetConfig(config GeneratorConfig) {
+	g.Config = config
+}
+
 // generateDecorations generates flowers and tall grass
 func (g *Generator) generateDecorations(c *chunk.Chunk, startX, startZ int) {
 	chunkRng := vmath.NewSeededRNG(g.seed + int64(c.CX)*2000 + int64(c.CZ))
@@ -420,7 +450,7 @@ func (g *Generator) generateDecorations(c *chunk.Chunk, startX, startZ int) {
 			wz := startZ + lz
 			height := c.GetHeight(lx, lz)
 
-			if height <= SeaLevel {
+			if height <= g.Config.SeaLevel {
 				continue
 			}
 
@@ -506,7 +536,7 @@ func (g *Generator) generateWaterfalls(c *chunk.Chunk, startX, startZ int) {
 					currentX := lx + dir[0]
 					currentZ := lz + dir[1]
 
-					for currentY > neighborHeight && currentY > SeaLevel {
+					for currentY > neighborHeight && currentY > g.Config.SeaLevel {
 						if currentX >= 0 && currentX < chunk.Size &&
 							currentZ >= 0 && currentZ < chunk.Size {
 							if c.GetBlock(currentX, currentY, currentZ) == block.Air {

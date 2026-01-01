@@ -50,6 +50,9 @@ func (cm *CreatureManager) Update(dt float32, playerPos mgl32.Vec3, getBiome fun
 		// Update AI
 		creature.Update(dt, playerPos)
 
+		// Ground creature to terrain
+		cm.groundCreature(creature, getHeight)
+
 		// Check despawn distance
 		dx := creature.Position.X() - playerPos.X()
 		dz := creature.Position.Z() - playerPos.Z()
@@ -64,6 +67,54 @@ func (cm *CreatureManager) Update(dt float32, playerPos mgl32.Vec3, getBiome fun
 	// Try to spawn new creatures
 	if len(cm.creatures) < cm.maxCreatures && cm.rng.Next() < 0.02 {
 		cm.trySpawn(playerPos, getBiome, getHeight)
+	}
+}
+
+// groundCreature ensures the creature is properly positioned on the terrain
+func (cm *CreatureManager) groundCreature(c *entity.Creature, getHeight func(x, z int) int) {
+	// Get terrain height at creature position
+	terrainHeight := float32(getHeight(int(c.Position.X()), int(c.Position.Z())))
+	c.GroundY = terrainHeight
+
+	switch c.Template {
+	case entity.TemplateFlying:
+		// Flying creatures hover above terrain
+		hoverHeight := terrainHeight + 3.0 + float32(math.Sin(float64(c.AnimationTime)*2.0))*0.5
+		// Smoothly interpolate to hover height
+		c.Position[1] += (hoverHeight - c.Position.Y()) * 0.1
+
+	case entity.TemplateSlime:
+		// Slimes can bounce, apply gravity when above ground
+		if c.Position.Y() > terrainHeight+0.01 {
+			c.Velocity[1] -= 15.0 * 0.016 // Gravity
+		}
+		// Clamp to ground
+		if c.Position.Y() < terrainHeight {
+			c.Position[1] = terrainHeight
+			c.Velocity[1] = 0
+		}
+
+	case entity.TemplateFish:
+		// Fish stay at water level or terrain if no water
+		waterLevel := float32(12) // Sea level
+		if terrainHeight < waterLevel {
+			c.Position[1] = waterLevel - 1.0 + float32(math.Sin(float64(c.AnimationTime)*3.0))*0.3
+		} else {
+			// On land - die or flop (for now just stay on ground)
+			c.Position[1] = terrainHeight
+		}
+
+	default:
+		// Quadrupeds, bipeds, spiders - walk on ground
+		// Apply gravity
+		if c.Position.Y() > terrainHeight+0.01 {
+			c.Velocity[1] -= 20.0 * 0.016 // Gravity
+		}
+		// Clamp to ground
+		if c.Position.Y() < terrainHeight {
+			c.Position[1] = terrainHeight
+			c.Velocity[1] = 0
+		}
 	}
 }
 

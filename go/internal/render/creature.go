@@ -2,6 +2,7 @@
 package render
 
 import (
+	"math"
 	"voxelgame/internal/core/block"
 	"voxelgame/internal/generation/entity"
 
@@ -115,13 +116,103 @@ func (cr *CreatureRenderer) RenderCreature(creature *entity.Creature, view, proj
 	cr.shader.SetMat4("uProjection", projection)
 	cr.shader.SetVec3("uSunDirection", sunDir)
 
+	// Calculate animation offsets
+	walkPhase := creature.WalkPhase
+	idleBreath := float32(math.Sin(float64(creature.AnimationTime)*2.0)) * 0.02
+	legIndex := 0
+
 	// Render each body part as a scaled cube
 	for _, part := range creature.BodyParts {
-		pos := creature.Position.Add(part.Offset)
+		offset := part.Offset
+
+		// Apply body bob when moving or idle breathing
+		if part.Type == "torso" || part.Type == "body" || part.Type == "abdomen" {
+			if creature.IsMoving {
+				// Walking bob
+				offset[1] += float32(math.Abs(math.Sin(float64(walkPhase)*2.0))) * 0.03 * creature.Size
+			} else {
+				// Idle breathing
+				offset[1] += idleBreath * creature.Size
+			}
+		}
+
+		// Head slight movement
+		if part.Type == "head" {
+			if creature.IsMoving {
+				offset[1] += float32(math.Abs(math.Sin(float64(walkPhase)*2.0))) * 0.02 * creature.Size
+			} else {
+				offset[1] += idleBreath * creature.Size
+			}
+		}
+
+		pos := creature.Position.Add(offset)
 
 		// Model matrix: translate, rotate, scale
 		model := mgl32.Translate3D(pos.X(), pos.Y(), pos.Z())
 		model = model.Mul4(mgl32.HomogRotate3DY(creature.Rotation))
+
+		// Apply part-specific animations
+		switch part.Type {
+		case "leg":
+			if creature.IsMoving {
+				// Alternate legs based on index
+				legPhase := walkPhase
+				if legIndex%2 == 1 {
+					legPhase += math.Pi // Opposite phase
+				}
+				// Front vs back legs for quadrupeds
+				if creature.Template == entity.TemplateQuadruped && legIndex >= 2 {
+					legPhase += math.Pi * 0.5 // Offset for back legs
+				}
+				// Swing angle
+				legSwing := float32(math.Sin(float64(legPhase))) * 0.5
+				// Rotate around X axis at the hip (top of leg)
+				model = model.Mul4(mgl32.Translate3D(0, part.Size.Y()*0.5, 0))
+				model = model.Mul4(mgl32.HomogRotate3DX(legSwing))
+				model = model.Mul4(mgl32.Translate3D(0, -part.Size.Y()*0.5, 0))
+			}
+			legIndex++
+
+		case "arm":
+			if creature.IsMoving {
+				// Arms swing opposite to legs
+				armPhase := walkPhase + math.Pi
+				if legIndex%2 == 1 {
+					armPhase += math.Pi
+				}
+				armSwing := float32(math.Sin(float64(armPhase))) * 0.4
+				model = model.Mul4(mgl32.Translate3D(0, part.Size.Y()*0.5, 0))
+				model = model.Mul4(mgl32.HomogRotate3DX(armSwing))
+				model = model.Mul4(mgl32.Translate3D(0, -part.Size.Y()*0.5, 0))
+			}
+			legIndex++
+
+		case "wing":
+			// Wings always flap for flying creatures
+			wingFlap := float32(math.Sin(float64(creature.AnimationTime)*8.0)) * 0.6
+			// Flap around Z axis
+			if offset.X() > 0 {
+				model = model.Mul4(mgl32.HomogRotate3DZ(-wingFlap))
+			} else {
+				model = model.Mul4(mgl32.HomogRotate3DZ(wingFlap))
+			}
+
+		case "tail":
+			// Tail wags slightly
+			tailWag := float32(math.Sin(float64(creature.AnimationTime)*4.0)) * 0.2
+			model = model.Mul4(mgl32.HomogRotate3DY(tailWag))
+
+		case "blob":
+			// Slime squish animation
+			squish := float32(math.Sin(float64(creature.AnimationTime)*3.0))*0.1 + 1.0
+			model = model.Mul4(mgl32.Scale3D(1.0/squish, squish, 1.0/squish))
+
+		case "fin":
+			// Fish fin flutter
+			finFlutter := float32(math.Sin(float64(creature.AnimationTime)*6.0)) * 0.3
+			model = model.Mul4(mgl32.HomogRotate3DZ(finFlutter))
+		}
+
 		model = model.Mul4(mgl32.Scale3D(part.Size.X(), part.Size.Y(), part.Size.Z()))
 
 		cr.shader.SetMat4("uModel", model)

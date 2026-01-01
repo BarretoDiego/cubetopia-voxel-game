@@ -158,3 +158,73 @@ func (inv *Inventory) GetHotbarColors() [][3]float32 {
 func (inv *Inventory) Toggle() {
 	inv.IsOpen = !inv.IsOpen
 }
+
+// SlotInfo contains display information for a slot
+type SlotInfo struct {
+	BlockType block.Type
+	Count     int
+	Name      string
+}
+
+// GetHotbarSlots returns full slot info for hotbar display
+func (inv *Inventory) GetHotbarSlots() []SlotInfo {
+	slots := make([]SlotInfo, len(inv.Hotbar))
+	for i, slot := range inv.Hotbar {
+		name := ""
+		if slot.Count > 0 {
+			name = slot.BlockType.String()
+		}
+		slots[i] = SlotInfo{
+			BlockType: slot.BlockType,
+			Count:     slot.Count,
+			Name:      name,
+		}
+	}
+	return slots
+}
+
+// BlockInventoryInfo contains info about a block type and its count in inventory
+type BlockInventoryInfo struct {
+	BlockType  block.Type
+	Name       string
+	Color      [3]float32
+	TotalCount int
+	HotbarSlot int // -1 if not in hotbar, 0-8 if in hotbar
+}
+
+// GetAllBlocksWithCounts returns all placeable blocks with inventory counts
+func (inv *Inventory) GetAllBlocksWithCounts() []BlockInventoryInfo {
+	placeable := block.GetAllPlaceableBlocks()
+	result := make([]BlockInventoryInfo, len(placeable))
+
+	for i, bt := range placeable {
+		info := BlockInventoryInfo{
+			BlockType:  bt,
+			Name:       bt.String(),
+			Color:      bt.GetColor(),
+			TotalCount: 0,
+			HotbarSlot: -1,
+		}
+
+		// Count in hotbar
+		for j, slot := range inv.Hotbar {
+			if slot.BlockType == bt {
+				info.TotalCount += slot.Count
+				if info.HotbarSlot == -1 {
+					info.HotbarSlot = j
+				}
+			}
+		}
+
+		// Count in main inventory
+		for _, slot := range inv.Main {
+			if slot.BlockType == bt {
+				info.TotalCount += slot.Count
+			}
+		}
+
+		result[i] = info
+	}
+
+	return result
+}

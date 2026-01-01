@@ -102,6 +102,12 @@ type Creature struct {
 
 	// Inventory
 	HeldItem block.Type
+
+	// Animation state
+	AnimationTime float32 // Continuous time for animations
+	WalkPhase     float32 // 0-2π cycle for walk animation
+	IsMoving      bool    // Whether creature is currently moving
+	GroundY       float32 // Current ground level Y position
 }
 
 // Generator creates procedural creatures
@@ -302,6 +308,7 @@ func (g *Generator) generateStats(template CreatureTemplate, size float32) Creat
 // Update updates creature behavior
 func (c *Creature) Update(dt float32, playerPos mgl32.Vec3) {
 	c.Timer += dt
+	c.AnimationTime += dt
 
 	switch c.State {
 	case "idle":
@@ -351,7 +358,7 @@ func (c *Creature) Update(dt float32, playerPos mgl32.Vec3) {
 
 	// Slimes jump periodically
 	if c.Template == TemplateSlime && c.Timer > 1 {
-		if c.Position.Y() < 0.1 {
+		if c.Position.Y() < c.GroundY+0.1 {
 			c.Velocity[1] = c.Stats.JumpForce
 			c.Timer = 0
 		}
@@ -359,6 +366,18 @@ func (c *Creature) Update(dt float32, playerPos mgl32.Vec3) {
 
 	// Apply velocity
 	c.Position = c.Position.Add(c.Velocity.Mul(dt))
+
+	// Update animation state
+	speed := float32(math.Sqrt(float64(c.Velocity[0]*c.Velocity[0] + c.Velocity[2]*c.Velocity[2])))
+	c.IsMoving = speed > 0.1
+
+	if c.IsMoving {
+		// Walk phase cycles at speed proportional to movement
+		c.WalkPhase += dt * speed * 3.0
+		if c.WalkPhase > 2*math.Pi {
+			c.WalkPhase -= 2 * math.Pi
+		}
+	}
 
 	// Dampen velocity
 	c.Velocity[0] *= 0.9

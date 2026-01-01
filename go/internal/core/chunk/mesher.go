@@ -6,8 +6,8 @@ import (
 )
 
 // Vertex data layout for OpenGL
-// Position (3) + Normal (3) + Color (3) + AO (1) + TexCoord (2) + MaterialID (1) = 13 floats
-const VertexSize = 13
+// Position (3) + Normal (3) + Color (3) + AO (1) + TexCoord (2) + MaterialID (1) + TextureLayerID (1) = 14 floats
+const VertexSize = 14
 
 // Standard UV coordinates for a quad
 var faceUVs = [4][2]float32{
@@ -245,6 +245,8 @@ func (m *Mesher) addQuadCustom(
 		m.vertices = append(m.vertices, uvs[i][0], uvs[i][1])
 		// MatID
 		m.vertices = append(m.vertices, matID)
+		// TextureLayerID (use 0 for custom geometry, color-based)
+		m.vertices = append(m.vertices, 0)
 	}
 
 	m.indices = append(m.indices,
@@ -262,6 +264,9 @@ func (m *Mesher) addVisibleFaces(
 	c *Chunk,
 	getBlock BlockGetter,
 ) {
+	// Special handling for water to prevent internal face flickering
+	isWater := blockType == block.Water
+
 	for i, face := range faceNames {
 		offset := neighborOffsets[i]
 		neighborType := getBlock(wx+offset[0], wy+offset[1], wz+offset[2])
@@ -269,8 +274,26 @@ func (m *Mesher) addVisibleFaces(
 		// Only add face if neighbor is air or transparent (and different type)
 		neighborDef := block.GetDefinition(neighborType)
 
-		if neighborType == block.Air ||
-			(neighborDef.Transparent && neighborType != blockType) {
+		shouldRender := false
+
+		if isWater {
+			// For water: only render face if neighbor is NOT water and NOT air
+			// Exception: render top face if neighbor above is air (water surface)
+			if face == "top" && neighborType == block.Air {
+				shouldRender = true
+			} else if neighborType != block.Water && neighborType != block.Air && !neighborDef.Transparent {
+				// Side/bottom faces only when adjacent to solid blocks (for underwater viewing)
+				shouldRender = true
+			}
+		} else {
+			// Normal logic for other blocks
+			if neighborType == block.Air ||
+				(neighborDef.Transparent && neighborType != blockType) {
+				shouldRender = true
+			}
+		}
+
+		if shouldRender {
 			m.addFace(face, float32(wx), float32(wy), float32(wz), blockDef, c, lx, ly, lz, getBlock)
 		}
 	}
@@ -291,6 +314,17 @@ func (m *Mesher) addFace(
 
 	color := blockDef.Color
 	materialID := float32(blockDef.Material)
+
+	// Select texture layer based on face
+	var textureLayerID float32
+	switch face {
+	case "top":
+		textureLayerID = float32(blockDef.TextureTop)
+	case "bottom":
+		textureLayerID = float32(blockDef.TextureBottom)
+	default: // front, back, left, right
+		textureLayerID = float32(blockDef.TextureSide)
+	}
 
 	// Add 4 vertices for the face
 	for i := 0; i < 4; i++ {
@@ -319,6 +353,8 @@ func (m *Mesher) addFace(
 		m.vertices = append(m.vertices, faceUVs[i][0], faceUVs[i][1])
 		// Material ID
 		m.vertices = append(m.vertices, materialID)
+		// Texture Layer ID
+		m.vertices = append(m.vertices, textureLayerID)
 	}
 
 	// Two triangles per face

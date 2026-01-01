@@ -4,8 +4,9 @@ layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec3 aColor; // Keeps support for color-tinted blocks
 layout(location = 3) in float aAO;
-layout(location = 4) in vec2 aTexCoord; // New: Texture Coordinates
-layout(location = 5) in float aMaterialId; // New: Material ID for special effects
+layout(location = 4) in vec2 aTexCoord; // Texture Coordinates
+layout(location = 5) in float aMaterialId; // Material ID for special effects
+layout(location = 6) in float aTextureLayerId; // Texture layer in array
 
 uniform mat4 uProjection;
 uniform mat4 uView;
@@ -19,6 +20,7 @@ out float vAO;
 out vec3 vWorldPos;
 out vec2 vTexCoord;
 out float vMaterialId;
+out float vTextureLayerId;
 
 // Simple hash function for random offsets
 float hash(vec2 p) {
@@ -49,6 +51,7 @@ void main() {
     vAO = aAO;
     vTexCoord = aTexCoord;
     vMaterialId = aMaterialId;
+    vTextureLayerId = aTextureLayerId;
     vWorldPos = pos;
     
     gl_Position = uProjection * uView * vec4(pos, 1.0);

@@ -2,6 +2,7 @@
 package chunk
 
 import (
+	"fmt"
 	"voxelgame/internal/core/block"
 )
 
@@ -55,8 +56,7 @@ func (c *Chunk) ID() string {
 
 // ChunkID creates a chunk ID string from coordinates
 func ChunkID(cx, cz int) string {
-	// Simple concatenation for map keys
-	return string(rune(cx)) + "," + string(rune(cz))
+	return fmt.Sprintf("%d,%d", cx, cz)
 }
 
 // getIndex converts local coordinates to array index

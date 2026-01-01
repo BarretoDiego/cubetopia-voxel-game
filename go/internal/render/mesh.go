@@ -41,7 +41,7 @@ func NewChunkMesh(data *chunk.MeshData) *ChunkMesh {
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.EBO)
 	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(data.Indices)*4, gl.Ptr(data.Indices), gl.STATIC_DRAW)
 
-	// Vertex layout: Position (3) + Normal (3) + Color (3) + AO (1) = 10 floats
+	// Vertex layout: Position (3) + Normal (3) + Color (3) + AO (1) + TexCoord (2) + MaterialID (1) + TextureLayerID (1) = 14 floats
 	stride := int32(chunk.VertexSize * 4)
 
 	// Position attribute (location 0)
@@ -67,6 +67,10 @@ func NewChunkMesh(data *chunk.MeshData) *ChunkMesh {
 	// MaterialID attribute (location 5)
 	gl.VertexAttribPointerWithOffset(5, 1, gl.FLOAT, false, stride, 12*4)
 	gl.EnableVertexAttribArray(5)
+
+	// TextureLayerID attribute (location 6)
+	gl.VertexAttribPointerWithOffset(6, 1, gl.FLOAT, false, stride, 13*4)
+	gl.EnableVertexAttribArray(6)
 
 	// Unbind
 	gl.BindVertexArray(0)

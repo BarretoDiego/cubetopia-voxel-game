@@ -13,11 +13,20 @@ import (
 
 	"voxelgame/internal/core/block"
 	"voxelgame/internal/generation/entity"
+	"voxelgame/internal/generation/terrain"
 	"voxelgame/internal/physics"
 	"voxelgame/internal/render"
 	"voxelgame/internal/save"
 	"voxelgame/internal/ui"
 	"voxelgame/internal/world"
+)
+
+// Build metadata - injected at build time via ldflags
+var (
+	Version   = "dev"
+	BuildDate = "unknown"
+	GitCommit = "unknown"
+	GameName  = "Voxel Engine"
 )
 
 // Game holds all game state
@@ -33,6 +42,8 @@ type Game struct {
 	creatureRenderer *render.CreatureRenderer
 	raytracer        *render.RaytracingRenderer
 	underwater       *render.UnderwaterEffect
+	blockOutline     *render.BlockOutlineRenderer
+	blockBreaker     *render.BlockBreaker
 
 	// UI
 	uiRenderer   *ui.Renderer
@@ -61,8 +72,9 @@ type Game struct {
 	targetBlock *physics.RaycastResult
 
 	// UI State
-	showControls bool
-	controlsList []string
+	showControls  bool
+	showInventory bool
+	controlsList  []string
 
 	// Key state for single press detection
 	lastKeyStates map[glfw.Key]bool
@@ -75,9 +87,12 @@ func main() {
 	// core: crucial for OpenGL on macOS
 	runtime.LockOSThread()
 
-	fmt.Println("=================================")
-	fmt.Println("  Voxel Engine - Go Edition")
-	fmt.Println("=================================")
+	fmt.Println("═══════════════════════════════════════════")
+	fmt.Printf("  %s  v%s\n", GameName, Version)
+	fmt.Println("═══════════════════════════════════════════")
+	fmt.Printf("  Build:  %s\n", BuildDate)
+	fmt.Printf("  Commit: %s\n", GitCommit)
+	fmt.Println("═══════════════════════════════════════════")
 	fmt.Println()
 	fmt.Println("Controls:")
 	fmt.Println("  WASD       - Move")
@@ -129,6 +144,7 @@ func NewGame() (*Game, error) {
 			"LMB - Break",
 			"RMB - Place",
 			"1-9 - Hotbar",
+			"I - Inventario",
 			"H - Toggle Help",
 			"F3 - Debug Info",
 			"F5 - Quick Save",
@@ -215,57 +231,29 @@ func NewGame() (*Game, error) {
 	}
 	g.underwater = underwater
 
+	// Create block outline renderer
+	blockOutline, err := render.NewBlockOutlineRenderer()
+	if err != nil {
+		fmt.Printf("Warning: Failed to create block outline renderer: %v\n", err)
+	}
+	g.blockOutline = blockOutline
+
+	// Create block breaker
+	blockBreaker, err := render.NewBlockBreaker()
+	if err != nil {
+		fmt.Printf("Warning: Failed to create block breaker: %v\n", err)
+	}
+	g.blockBreaker = blockBreaker
+
 	// Create inventory
 	g.inventory = ui.NewInventory()
 
-	// AUTO-START: Skip menu for now and start directly in playing mode
-	fmt.Println("[DEBUG] Auto-starting new game...")
-	g.autoStartGame()
+	// Start at main menu
+	g.stateManager.SetState(ui.StateMainMenu)
+	g.mainMenu.IsVisible = true
+	g.engine.SetCursorMode(false) // Show cursor for menu navigation
 
 	return g, nil
-}
-
-// autoStartGame starts a new game automatically (skip menu)
-func (g *Game) autoStartGame() {
-	// Create world with random seed
-	seed := time.Now().UnixNano()
-	fmt.Printf("World seed: %d\n", seed)
-
-	g.world = world.NewWorld(seed)
-
-	// Get spawn position
-	spawnX, spawnY, spawnZ := g.world.GetSpawnPosition()
-	spawnPos := mgl32.Vec3{float32(spawnX), float32(spawnY), float32(spawnZ)}
-	fmt.Printf("Spawn position: %.1f, %.1f, %.1f\n", spawnX, spawnY, spawnZ)
-
-	// Create player with physics
-	g.player = physics.NewPlayer(spawnPos, func(x, y, z int) block.Type {
-		return g.world.GetBlock(x, y, z)
-	})
-
-	// Create player model for 3rd person view
-	gen := entity.NewGenerator(seed)
-	g.playerModel = gen.Create(entity.TemplateBiped, "plains", spawnPos, 1.0)
-	// Customized colors for player
-	g.playerModel.PrimaryColor = [3]float32{0.2, 0.2, 0.8}   // Blue shirt
-	g.playerModel.SecondaryColor = [3]float32{0.1, 0.1, 0.1} // Dark pants
-
-	// Enable fly mode by default for easier navigation
-	g.player.IsFlying = true
-	fmt.Println("[DEBUG] Fly mode enabled by default")
-
-	// Create enhanced movement
-	g.movement = physics.NewEnhancedMovement()
-
-	// Switch to playing state
-	g.stateManager.SetState(ui.StatePlaying)
-	g.mainMenu.IsVisible = false
-
-	// Capture mouse for FPS controls
-	g.engine.SetCursorMode(true)
-
-	// Enable debug by default
-	g.settings.EnablePostProcess = true
 }
 
 func (g *Game) setupMenus() {
@@ -309,6 +297,21 @@ func (g *Game) startNewGame() {
 	g.playerModel = gen.Create(entity.TemplateBiped, "plains", spawnPos, 1.0)
 	g.playerModel.PrimaryColor = [3]float32{0.2, 0.2, 0.8}
 	g.playerModel.SecondaryColor = [3]float32{0.1, 0.1, 0.1}
+
+	// Create demo campfire structure
+	// Ground height at 5,5
+	fireX, fireZ := 5, 5
+	fireY := g.world.GetHeight(fireX, fireZ)
+	// Clear area
+	g.world.SetBlock(fireX, fireY+1, fireZ, block.Air)
+	g.world.SetBlock(fireX, fireY+2, fireZ, block.Air)
+	// Base
+	g.world.SetBlock(fireX, fireY, fireZ, block.Cobblestone)
+	// "Logs" for fire (using OakLog horizontally if possible, but just block for now)
+	// Since we don't have rotation yet, just place a log.
+	// Or maybe 4 logs around a center fire?
+	// Simple: Just a log block with fire on top.
+	g.world.SetBlock(fireX, fireY+1, fireZ, block.OakLog)
 
 	// Create enhanced movement
 	g.movement = physics.NewEnhancedMovement()
@@ -520,6 +523,11 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 		g.showControls = !g.showControls
 	}
 
+	// Toggle Inventory Panel (I)
+	if g.wasKeyJustPressed(input, glfw.KeyI) {
+		g.showInventory = !g.showInventory
+	}
+
 	// Hotbar selection
 	for i := 0; i < 9; i++ {
 		if input.IsKeyPressed(glfw.Key(int(glfw.Key1) + i)) {
@@ -629,6 +637,25 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 		g.sky.Update(dt)
 	}
 
+	// Update atmospheric particles based on biome and time of day
+	if g.sky != nil && g.world != nil {
+		playerPos := g.player.Position
+		biome := g.world.GetBiomeAt(int(playerPos.X()), int(playerPos.Z()))
+		timeOfDay := g.sky.GetTimeOfDayNormalized()
+		g.engine.UpdateAtmosphericParticles(playerPos, biome, timeOfDay)
+	}
+
+	// Update water particles (bubbles, fish)
+	if g.world != nil {
+		waterSurfaceY := float32(12) // Sea level
+		g.engine.UpdateWaterParticles(g.player.Position, isUnderwater, waterSurfaceY)
+	}
+
+	// Demo campfire at origin (always visible as a test)
+	// Base is at height, Log is at height+1, so fire is at height+2
+	campfirePos := mgl32.Vec3{5, float32(g.world.GetHeight(5, 5)) + 2.0, 5}
+	g.engine.EmitCampfire(campfirePos)
+
 	// Update underwater effect
 	if g.underwater != nil {
 		g.underwater.Update(dt)
@@ -645,8 +672,52 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 		g.targetBlock = nil
 	}
 
-	// Handle block interaction - only on click (not while held)
-	if g.wasMouseButtonJustPressed(input, glfw.MouseButtonLeft) && g.targetBlock != nil {
+	// Handle block interaction
+	isBreaking := input.IsMouseButtonPressed(glfw.MouseButtonLeft) && g.targetBlock != nil
+
+	if g.blockBreaker != nil {
+		if isBreaking {
+			// Start or continue breaking
+			targetPos := g.targetBlock.BlockPos
+			targetType := g.targetBlock.BlockType
+			def := block.GetDefinition(targetType)
+
+			// If we switched blocks, the breaker handles it (resets progress)
+			g.blockBreaker.StartBreaking(targetPos, def.BreakTime)
+
+			// Update progress
+			broken := g.blockBreaker.Update(dt)
+
+			if broken {
+				// Block destroyed!
+				// Get block color for particles before destroying
+				destroyedBlock := g.world.GetBlock(targetPos[0], targetPos[1], targetPos[2])
+				blockColor := destroyedBlock.GetColor()
+
+				// Destroy block
+				g.world.SetBlock(targetPos[0], targetPos[1], targetPos[2], block.Air)
+
+				// Stop breaking animation
+				g.blockBreaker.StopBreaking()
+
+				// Emit destruction particles
+				if ps := g.engine.GetParticleSystem(); ps != nil {
+					blockCenter := mgl32.Vec3{
+						float32(targetPos[0]) + 0.5,
+						float32(targetPos[1]) + 0.5,
+						float32(targetPos[2]) + 0.5,
+					}
+					particleColor := mgl32.Vec4{blockColor[0], blockColor[1], blockColor[2], 1.0}
+					ps.EmitExplosion(blockCenter, 12, particleColor)
+				}
+			}
+		} else {
+			// Stop breaking if button released or looking away
+			g.blockBreaker.StopBreaking()
+			g.blockBreaker.Update(dt) // Just to reset state if needed
+		}
+	} else if g.wasMouseButtonJustPressed(input, glfw.MouseButtonLeft) && g.targetBlock != nil {
+		// Fallback for click-to-break if breaker not initialized
 		// Get block color for particles before destroying
 		destroyedBlock := g.world.GetBlock(g.targetBlock.BlockPos[0], g.targetBlock.BlockPos[1], g.targetBlock.BlockPos[2])
 		blockColor := destroyedBlock.GetColor()
@@ -734,6 +805,15 @@ func (g *Game) updateSettings(input *render.Input) {
 		g.postProcess.EnableBloom = g.settings.EnableBloom
 		g.postProcess.BloomStrength = g.settings.BloomStrength
 	}
+	if g.world != nil {
+		terrainConfig := terrain.GeneratorConfig{
+			SeaLevel:         g.settings.SeaLevel,
+			TerrainAmplitude: g.settings.TerrainAmplitude,
+			TreeDensity:      g.settings.TreeDensity,
+			CaveFrequency:    g.settings.CaveFrequency,
+		}
+		g.world.ApplySettings(g.settings.DayDuration, g.settings.NightBrightness, terrainConfig)
+	}
 }
 
 func (g *Game) wasKeyJustPressed(input *render.Input, key glfw.Key) bool {
@@ -798,7 +878,40 @@ func (g *Game) renderPlaying() {
 		}
 
 		// Render world
-		g.engine.UseVoxelShader()
+		sunDir := mgl32.Vec3{0.5, 0.8, 0.3}.Normalize()
+		sunIntensity := float32(1.0)
+		skyColor := mgl32.Vec3{0.53, 0.81, 0.98}
+		ambientColor := mgl32.Vec3{1.0, 0.95, 0.9}
+
+		if g.sky != nil {
+			sunDir = g.sky.GetSunDirection()
+			// Simple day/night logic for intensity and color
+			timeOfDay := g.sky.GetTimeOfDayNormalized() // 0-1
+
+			// Day/Night cycle
+			// Day: 0.25 - 0.75 (approx)
+			if g.sky.IsNight() {
+				sunIntensity = 0.1
+				skyColor = mgl32.Vec3{0.02, 0.02, 0.05}   // Dark night sky
+				ambientColor = mgl32.Vec3{0.1, 0.1, 0.15} // Dim blueish ambient
+			} else {
+				// Sunset/Sunrise transition could be added here
+				if timeOfDay < 0.3 || timeOfDay > 0.7 {
+					// Golden hour
+					sunIntensity = 0.6
+					skyColor = mgl32.Vec3{0.8, 0.5, 0.3}
+					ambientColor = mgl32.Vec3{0.8, 0.7, 0.6}
+				}
+			}
+		}
+
+		g.engine.UseVoxelShaderWithTime(render.TimeOfDayData{
+			SunDirection: sunDir,
+			SunIntensity: sunIntensity,
+			SkyColor:     skyColor,
+			AmbientColor: ambientColor,
+			FogColor:     skyColor,
+		})
 		g.world.Render()
 
 		// Render creatures
@@ -816,7 +929,6 @@ func (g *Game) renderPlaying() {
 			}
 			g.creatureRenderer.RenderCreatures(g.world.GetCreatures(), view, projection, sunDir)
 
-			// Render player in 3rd person
 			if g.engine.GetCamera().ThirdPerson && g.playerModel != nil {
 				// Update player model position and rotation
 				// Player position is eye height, model position is feet
@@ -834,6 +946,18 @@ func (g *Game) renderPlaying() {
 				g.creatureRenderer.RenderCreature(g.playerModel, view, projection, sunDir)
 			}
 		}
+
+		// Render block outline
+		if g.blockOutline != nil && g.targetBlock != nil {
+			viewProj := g.engine.GetViewProjection()
+			g.blockOutline.Render(g.targetBlock.BlockPos, viewProj)
+		}
+
+		// Render block breaking animation
+		if g.blockBreaker != nil {
+			viewProj := g.engine.GetViewProjection()
+			g.blockBreaker.Render(viewProj)
+		}
 	}
 
 	// Render UI
@@ -843,8 +967,19 @@ func (g *Game) renderPlaying() {
 		// Crosshair
 		g.uiRenderer.DrawCrosshair()
 
-		// Hotbar
-		g.uiRenderer.DrawHotbar(g.inventory.SelectedIndex, g.inventory.GetHotbarColors())
+		// Target Info
+		if g.targetBlock != nil {
+			def := block.GetDefinition(g.targetBlock.BlockType)
+			g.uiRenderer.DrawTargetInfo(def.Name)
+		}
+
+		// Hotbar with item counts
+		hotbarSlots := g.inventory.GetHotbarSlots()
+		counts := make([]int, len(hotbarSlots))
+		for i, slot := range hotbarSlots {
+			counts[i] = slot.Count
+		}
+		g.uiRenderer.DrawHotbarWithCounts(g.inventory.SelectedIndex, g.inventory.GetHotbarColors(), counts)
 
 		// Debug panel
 		if g.settings.EnablePostProcess {
@@ -862,6 +997,11 @@ func (g *Game) renderPlaying() {
 			g.uiRenderer.DrawMinimap(g.minimap.GetTextureID())
 		}
 
+		// Draw Time Indicator
+		if g.world != nil && g.world.TimeOfDay != nil {
+			g.uiRenderer.DrawTimeIndicator(g.world.TimeOfDay.GetTimeString())
+		}
+
 		// Raytracing indicator
 		if g.settings.EnableRaytracing {
 			g.uiRenderer.DrawRect(10, float32(g.screenHeight-40), 120, 25, [4]float32{1, 0.5, 0, 0.8})
@@ -870,6 +1010,21 @@ func (g *Game) renderPlaying() {
 		// Controls Overlay
 		if g.showControls {
 			g.uiRenderer.DrawControlsOverlay(g.controlsList)
+		}
+
+		// Inventory Panel
+		if g.showInventory {
+			blocks := g.inventory.GetAllBlocksWithCounts()
+			displayBlocks := make([]ui.BlockDisplayInfo, len(blocks))
+			for i, b := range blocks {
+				displayBlocks[i] = ui.BlockDisplayInfo{
+					Color:      b.Color,
+					Name:       b.Name,
+					Count:      b.TotalCount,
+					HotbarSlot: b.HotbarSlot,
+				}
+			}
+			g.uiRenderer.DrawInventoryPanel(displayBlocks, g.inventory.SelectedIndex)
 		}
 
 		g.uiRenderer.EndFrame()
@@ -1019,6 +1174,12 @@ func (g *Game) Cleanup() {
 	}
 	if g.sky != nil {
 		g.sky.Cleanup()
+	}
+	if g.blockOutline != nil {
+		g.blockOutline.Cleanup()
+	}
+	if g.blockBreaker != nil {
+		g.blockBreaker.Cleanup()
 	}
 	if g.uiRenderer != nil {
 		g.uiRenderer.Cleanup()

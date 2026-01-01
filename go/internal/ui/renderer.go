@@ -152,21 +152,56 @@ func (r *Renderer) DrawText(x, y, scale float32, text string, color [4]float32) 
 
 // DrawCrosshair draws a crosshair at the center of the screen
 func (r *Renderer) DrawCrosshair() {
-	cx := float32(r.width) / 2
-	cy := float32(r.height) / 2
-	size := float32(10)
-	thickness := float32(2)
-
-	white := [4]float32{1, 1, 1, 0.8}
+	centerX := float32(r.width) / 2
+	centerY := float32(r.height) / 2
+	size := float32(10.0)
+	thickness := float32(2.0)
+	color := [4]float32{1, 1, 1, 0.8}
 
 	// Horizontal line
-	r.DrawRect(cx-size, cy-thickness/2, size*2, thickness, white)
+	r.DrawRect(centerX-size, centerY-thickness/2, size*2, thickness, color)
 	// Vertical line
-	r.DrawRect(cx-thickness/2, cy-size, thickness, size*2, white)
+	r.DrawRect(centerX-thickness/2, centerY-size, thickness, size*2, color)
+}
+
+// DrawTargetInfo displays the name of the targeted block/entity
+func (r *Renderer) DrawTargetInfo(name string) {
+	if name == "" {
+		return
+	}
+
+	centerX := float32(r.width) / 2
+	centerY := float32(r.height) / 2
+
+	// Position text below crosshair
+	textY := centerY + 30.0
+	scale := float32(1.0) // Slightly smaller than default
+
+	// Estimate text width to center it (approximate)
+	// Font rendering doesn't give us easy width measurement yet, so we'll guess based on char count
+	estimatedWidth := float32(len(name)) * 10.0 // Approx 10px per char
+	textX := centerX - estimatedWidth/2
+
+	// Draw background for readability
+	// Padding
+	padding := float32(8.0)
+	bgWidth := estimatedWidth + padding*2
+	bgHeight := float32(24.0)
+	bgColor := [4]float32{0, 0, 0, 0.5}
+
+	r.DrawRect(centerX-bgWidth/2, textY-4, bgWidth, bgHeight, bgColor)
+
+	// Draw text
+	r.DrawText(textX, textY, scale, name, [4]float32{1, 1, 1, 1})
 }
 
 // DrawHotbar draws the hotbar at the bottom of the screen
 func (r *Renderer) DrawHotbar(selectedIndex int, blockColors [][3]float32) {
+	r.DrawHotbarWithCounts(selectedIndex, blockColors, nil)
+}
+
+// DrawHotbarWithCounts draws the hotbar with item quantities
+func (r *Renderer) DrawHotbarWithCounts(selectedIndex int, blockColors [][3]float32, counts []int) {
 	slotSize := float32(50)
 	padding := float32(4)
 	numSlots := len(blockColors)
@@ -191,9 +226,6 @@ func (r *Renderer) DrawHotbar(selectedIndex int, blockColors [][3]float32) {
 		// Block color preview (3D)
 		if i < len(blockColors) {
 			color := blockColors[i]
-			// blockColor := [4]float32{color[0], color[1], color[2], 1.0}
-			// r.DrawRect(x+8, startY+8, slotSize-16, slotSize-16, blockColor)
-
 			// Draw Isometric Cube
 			r.DrawIsometricCube(x+10, startY+10, slotSize-20, color)
 		}
@@ -206,10 +238,100 @@ func (r *Renderer) DrawHotbar(selectedIndex int, blockColors [][3]float32) {
 			r.DrawRect(x+slotSize-2, startY, 2, slotSize, [4]float32{1, 1, 0, 1}) // Right
 		}
 
-		// Slot Number
+		// Slot Number (top-left)
 		numStr := fmt.Sprintf("%d", i+1)
 		r.DrawText(x+2, startY+2, 1.0, numStr, [4]float32{1, 1, 1, 0.8})
+
+		// Item Count (bottom-right)
+		if counts != nil && i < len(counts) && counts[i] > 0 {
+			countStr := fmt.Sprintf("%d", counts[i])
+			// Position in bottom-right corner
+			r.DrawText(x+slotSize-float32(len(countStr)*8)-4, startY+slotSize-14, 1.0, countStr, [4]float32{1, 1, 1, 1})
+		}
 	}
+}
+
+// BlockDisplayInfo contains info for displaying a block in the inventory panel
+type BlockDisplayInfo struct {
+	Color      [3]float32
+	Name       string
+	Count      int
+	HotbarSlot int // -1 if not in hotbar
+}
+
+// DrawInventoryPanel draws the expanded inventory with all blocks
+func (r *Renderer) DrawInventoryPanel(blocks []BlockDisplayInfo, selectedHotbarIndex int) {
+	if r.shader == nil || len(blocks) == 0 {
+		return
+	}
+
+	// Panel dimensions
+	cols := 6
+	rows := (len(blocks) + cols - 1) / cols
+	slotSize := float32(60)
+	padding := float32(6)
+	panelPadding := float32(20)
+
+	panelWidth := float32(cols)*(slotSize+padding) + panelPadding*2
+	panelHeight := float32(rows)*(slotSize+padding) + panelPadding*2 + 40 // Extra for title
+
+	// Center the panel
+	panelX := (float32(r.width) - panelWidth) / 2
+	panelY := (float32(r.height) - panelHeight) / 2
+
+	// Background
+	r.DrawRect(panelX, panelY, panelWidth, panelHeight, [4]float32{0.1, 0.1, 0.15, 0.95})
+
+	// Border
+	borderColor := [4]float32{0.3, 0.6, 0.4, 1}
+	r.DrawRect(panelX, panelY, panelWidth, 3, borderColor)               // Top
+	r.DrawRect(panelX, panelY+panelHeight-3, panelWidth, 3, borderColor) // Bottom
+	r.DrawRect(panelX, panelY, 3, panelHeight, borderColor)              // Left
+	r.DrawRect(panelX+panelWidth-3, panelY, 3, panelHeight, borderColor) // Right
+
+	// Title
+	r.DrawText(panelX+panelPadding, panelY+10, 1.5, "INVENTARIO (I para fechar)", [4]float32{1, 1, 0.5, 1})
+
+	// Draw blocks in grid
+	startX := panelX + panelPadding
+	startY := panelY + 40
+
+	for i, block := range blocks {
+		col := i % cols
+		row := i / cols
+
+		x := startX + float32(col)*(slotSize+padding)
+		y := startY + float32(row)*(slotSize+padding)
+
+		// Slot background
+		bgColor := [4]float32{0.15, 0.15, 0.2, 0.8}
+		if block.HotbarSlot >= 0 {
+			// Highlight blocks in hotbar
+			bgColor = [4]float32{0.2, 0.3, 0.25, 0.9}
+		}
+		r.DrawRect(x, y, slotSize, slotSize, bgColor)
+
+		// Draw block preview
+		r.DrawIsometricCube(x+12, y+8, slotSize-24, block.Color)
+
+		// Hotbar slot indicator (top-left)
+		if block.HotbarSlot >= 0 {
+			hotbarStr := fmt.Sprintf("[%d]", block.HotbarSlot+1)
+			r.DrawText(x+2, y+2, 0.9, hotbarStr, [4]float32{1, 1, 0, 1})
+		}
+
+		// Count (bottom-right)
+		if block.Count > 0 {
+			countStr := fmt.Sprintf("%d", block.Count)
+			r.DrawText(x+slotSize-float32(len(countStr)*7)-4, y+slotSize-12, 0.9, countStr, [4]float32{1, 1, 1, 1})
+		} else {
+			// Show "0" for items not in inventory
+			r.DrawText(x+slotSize-10, y+slotSize-12, 0.9, "0", [4]float32{0.5, 0.5, 0.5, 0.8})
+		}
+	}
+
+	// Instructions at bottom
+	r.DrawText(panelX+panelPadding, panelY+panelHeight-25, 1.0, "Teclas 1-9: Selecionar item da hotbar", [4]float32{0.7, 0.7, 0.7, 1})
 }
 
 // DebugInfo contains debug information to display
@@ -281,6 +403,36 @@ func (r *Renderer) DrawControlsOverlay(commands []string) {
 	for i, cmd := range commands {
 		r.DrawText(x+padding, y+padding+float32(i+1)*lineHeight, 1.2, cmd, white)
 	}
+}
+
+// DrawTimeIndicator renders the current time
+func (r *Renderer) DrawTimeIndicator(timeString string) {
+	if r.shader == nil {
+		return
+	}
+
+	width := float32(120)
+	height := float32(36)
+
+	// Position: Top Center
+	x := (float32(r.width) - width) / 2
+	y := float32(10)
+
+	// Background
+	r.DrawRect(x, y, width, height, [4]float32{0, 0, 0, 0.5})
+
+	// Border
+	r.DrawRect(x, y, width, 2, [4]float32{0.5, 0.5, 0.5, 0.8})          // Top
+	r.DrawRect(x, y+height-2, width, 2, [4]float32{0.5, 0.5, 0.5, 0.8}) // Bottom
+	r.DrawRect(x, y, 2, height, [4]float32{0.5, 0.5, 0.5, 0.8})         // Left
+	r.DrawRect(x+width-2, y, 2, height, [4]float32{0.5, 0.5, 0.5, 0.8}) // Right
+
+	// Icon (Sun/Moon) or just text
+	// Center text
+	textWidth := float32(len(timeString) * 12) // Approx
+	textX := x + (width-textWidth)/2
+
+	r.DrawText(textX, y+8, 1.2, timeString, [4]float32{1, 0.9, 0.6, 1})
 }
 
 // DrawIsometricCube renders a fake 3D cube for UI
@@ -395,21 +547,30 @@ func (r *Renderer) restoreQuadVBO() {
 	gl.BufferSubData(gl.ARRAY_BUFFER, 0, len(vertices)*4, gl.Ptr(vertices))
 }
 
-// DrawMinimap draws the minimap
+// DrawMinimap draws the minimap as a radar in the bottom-left corner
 func (r *Renderer) DrawMinimap(textureID uint32) {
 	if r.shader == nil {
 		return
 	}
 
-	size := float32(128)
-	margin := float32(10)
-	x := float32(r.width) - size - margin
-	y := margin
+	size := float32(256) // Larger radar
+	margin := float32(16)
+	borderWidth := float32(6)
+
+	// Position: Bottom-Left
+	x := margin
+	y := float32(r.height) - size - margin - 80 // Account for hotbar
 
 	gl.UseProgram(r.shader.ID)
 
-	// Border
-	r.DrawRect(x-2, y-2, size+4, size+4, [4]float32{0.2, 0.2, 0.2, 1.0})
+	// Outer border (dark frame)
+	r.DrawRect(x-borderWidth-2, y-borderWidth-2, size+borderWidth*2+4, size+borderWidth*2+4, [4]float32{0.05, 0.1, 0.08, 1.0})
+
+	// Border (metallic green)
+	r.DrawRect(x-borderWidth, y-borderWidth, size+borderWidth*2, size+borderWidth*2, [4]float32{0.15, 0.25, 0.18, 1.0})
+
+	// Inner border highlight
+	r.DrawRect(x-2, y-2, size+4, size+4, [4]float32{0.0, 0.4, 0.25, 0.8})
 
 	// Bind Texture
 	gl.ActiveTexture(gl.TEXTURE0)
@@ -442,6 +603,9 @@ func (r *Renderer) DrawMinimap(textureID uint32) {
 	gl.BindVertexArray(r.quadVAO)
 	gl.DrawArrays(gl.TRIANGLES, 0, 6)
 	gl.BindVertexArray(0)
+
+	// Draw "RADAR" label
+	r.DrawText(x+size/2-25, y+size+8, 1.2, "RADAR", [4]float32{0.4, 1.0, 0.6, 1.0})
 }
 
 // Cleanup releases resources

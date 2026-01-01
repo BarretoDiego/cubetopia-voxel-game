@@ -4,11 +4,12 @@ package render
 import (
 	"fmt"
 	"math"
-	"os"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/glfw/v3.3/glfw"
 	"github.com/go-gl/mathgl/mgl32"
+
+	"voxelgame/assets"
 )
 
 // ... (init function)
@@ -123,20 +124,21 @@ func NewEngine(config Config) (*Engine, error) {
 
 	tm := NewTextureManager()
 	// Define standard texture list - Mapping to IDs 0, 1, 2...
+	// Now loading from embedded assets
 	textureFiles := []string{
-		"assets/textures/dirt.png",       // 0
-		"assets/textures/grass_top.png",  // 1
-		"assets/textures/grass_side.png", // 2
-		"assets/textures/stone.png",      // 3
-		"assets/textures/wood.png",       // 4
-		"assets/textures/leaves.png",     // 5
-		"assets/textures/water.png",      // 6
-		"assets/textures/ice.png",        // 7
-		"assets/textures/sand.png",       // 8
-		"assets/textures/snow.png",       // 9
-		"assets/textures/glass.png",      // 10
+		"textures/dirt.png",       // 0
+		"textures/grass_top.png",  // 1
+		"textures/grass_side.png", // 2
+		"textures/stone.png",      // 3
+		"textures/wood.png",       // 4
+		"textures/leaves.png",     // 5
+		"textures/water.png",      // 6
+		"textures/ice.png",        // 7
+		"textures/sand.png",       // 8
+		"textures/snow.png",       // 9
+		"textures/glass.png",      // 10
 	}
-	err = tm.LoadBlockTextures(textureFiles)
+	err = tm.LoadBlockTexturesFromEmbed(textureFiles, assets.FS())
 	if err != nil {
 		fmt.Printf("Error loading textures: %v\n", err)
 	}
@@ -169,20 +171,17 @@ func NewEngine(config Config) (*Engine, error) {
 	return engine, nil
 }
 
-// LoadShaders loads the voxel shader
+// LoadShaders loads the voxel shader from embedded assets
 func (e *Engine) LoadShaders() error {
-	// Read shader files
-	vShaderFile := "assets/shaders/voxel.vert"
-	fShaderFile := "assets/shaders/voxel.frag"
-
-	vSource, err := os.ReadFile(vShaderFile)
+	// Read shader files from embedded assets
+	vSource, err := assets.ReadFile("shaders/voxel.vert")
 	if err != nil {
-		return fmt.Errorf("failed to read vertex shader %s: %w", vShaderFile, err)
+		return fmt.Errorf("failed to read embedded vertex shader: %w", err)
 	}
 
-	fSource, err := os.ReadFile(fShaderFile)
+	fSource, err := assets.ReadFile("shaders/voxel.frag")
 	if err != nil {
-		return fmt.Errorf("failed to read fragment shader %s: %w", fShaderFile, err)
+		return fmt.Errorf("failed to read embedded fragment shader: %w", err)
 	}
 
 	shader, err := NewShader(string(vSource), string(fSource))
@@ -280,6 +279,27 @@ func (e *Engine) GetParticleSystem() *ParticleSystem {
 	return e.particleSystem
 }
 
+// UpdateAtmosphericParticles updates atmospheric particles based on player position and biome
+func (e *Engine) UpdateAtmosphericParticles(playerPos mgl32.Vec3, biome string, timeOfDay float32) {
+	if e.particleSystem != nil {
+		e.particleSystem.UpdateAtmospheric(playerPos, biome, timeOfDay, e.deltaTime)
+	}
+}
+
+// UpdateWaterParticles updates water/underwater particle effects
+func (e *Engine) UpdateWaterParticles(playerPos mgl32.Vec3, isUnderwater bool, waterSurfaceY float32) {
+	if e.particleSystem != nil {
+		e.particleSystem.UpdateWaterParticles(playerPos, isUnderwater, waterSurfaceY, e.deltaTime)
+	}
+}
+
+// EmitCampfire emits campfire particles at the given position
+func (e *Engine) EmitCampfire(pos mgl32.Vec3) {
+	if e.particleSystem != nil {
+		e.particleSystem.EmitCampfire(pos, e.deltaTime)
+	}
+}
+
 // GetViewProjection returns the combined view-projection matrix
 func (e *Engine) GetViewProjection() mgl32.Mat4 {
 	view := e.camera.GetViewMatrix()
@@ -291,8 +311,29 @@ func (e *Engine) GetViewProjection() mgl32.Mat4 {
 	return projection.Mul4(view)
 }
 
-// UseVoxelShader activates the voxel shader with uniforms
+// TimeOfDayData contains rendering data for time-based lighting
+type TimeOfDayData struct {
+	SunDirection mgl32.Vec3
+	SunIntensity float32
+	SkyColor     mgl32.Vec3
+	AmbientColor mgl32.Vec3
+	FogColor     mgl32.Vec3
+}
+
+// UseVoxelShader activates the voxel shader with uniforms (legacy, uses default lighting)
 func (e *Engine) UseVoxelShader() {
+	// Use default daytime lighting
+	e.UseVoxelShaderWithTime(TimeOfDayData{
+		SunDirection: mgl32.Vec3{0.5, 0.8, 0.3}.Normalize(),
+		SunIntensity: 1.0,
+		SkyColor:     mgl32.Vec3{0.53, 0.81, 0.98},
+		AmbientColor: mgl32.Vec3{1.0, 0.95, 0.9},
+		FogColor:     mgl32.Vec3{0.65, 0.82, 1.0},
+	})
+}
+
+// UseVoxelShaderWithTime activates the voxel shader with time-based lighting
+func (e *Engine) UseVoxelShaderWithTime(tod TimeOfDayData) {
 	if e.voxelShader == nil {
 		return
 	}
@@ -309,8 +350,14 @@ func (e *Engine) UseVoxelShader() {
 	e.voxelShader.SetMat4("uView", view)
 	e.voxelShader.SetMat4("uProjection", projection)
 	e.voxelShader.SetVec3("uCameraPos", e.camera.Position)
-	e.voxelShader.SetVec3("uSunDirection", mgl32.Vec3{0.5, 0.8, 0.3}.Normalize())
+	e.voxelShader.SetVec3("uSunDirection", tod.SunDirection)
 	e.voxelShader.SetFloat("uTime", float32(glfw.GetTime()))
+
+	// Time of Day uniforms
+	e.voxelShader.SetFloat("uSunIntensity", tod.SunIntensity)
+	e.voxelShader.SetVec3("uSkyColor", tod.SkyColor)
+	e.voxelShader.SetVec3("uAmbientColor", tod.AmbientColor)
+	e.voxelShader.SetVec3("uFogColor", tod.FogColor)
 
 	// Wind uniforms
 	// Simple wind direction variation
@@ -323,6 +370,11 @@ func (e *Engine) UseVoxelShader() {
 	// Bind Textures
 	e.textureManager.BindBlockTextures(0)
 	e.voxelShader.SetInt("uBlockAtlas", 0) // Texture Unit 0
+}
+
+// SetClearColor sets the OpenGL clear color (sky background)
+func (e *Engine) SetClearColor(r, g, b float32) {
+	gl.ClearColor(r, g, b, 1.0)
 }
 
 // Callbacks

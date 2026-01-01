@@ -45,6 +45,8 @@ type World struct {
 	chunksLoaded    int
 	meshesGenerated int
 	lastUpdateTime  time.Time
+	// Time of Day system
+	TimeOfDay *TimeOfDay
 }
 
 // NewWorld creates a new world with the given seed
@@ -64,6 +66,7 @@ func NewWorld(seed int64) *World {
 		CreatureManager:  NewCreatureManager(seed),
 		SaveManager:      save.NewManager(),
 		lastUpdateTime:   time.Now(),
+		TimeOfDay:        NewTimeOfDay(),
 	}
 
 	// Set up callbacks
@@ -78,6 +81,16 @@ func (w *World) Update(playerX, playerY, playerZ float64) {
 	w.playerX = playerX
 	w.playerY = playerY
 	w.playerZ = playerZ
+
+	// Calculate delta time
+	dt := float32(time.Since(w.lastUpdateTime).Seconds())
+	w.lastUpdateTime = time.Now()
+	if dt > 0.1 {
+		dt = 0.1 // Cap max dt to prevent huge jumps
+	}
+
+	// Update time of day
+	w.TimeOfDay.Update(dt)
 
 	// Update chunks around player
 	loadRequests := w.ChunkManager.UpdateAroundPlayer(playerX, playerZ)
@@ -102,6 +115,17 @@ func (w *World) Update(playerX, playerY, playerZ float64) {
 	// Update creatures
 	playerPos := mgl32.Vec3{float32(playerX), float32(playerY), float32(playerZ)}
 	w.CreatureManager.Update(0.016, playerPos, w.GetBiomeAt, w.GetHeight)
+}
+
+// ApplySettings applies settings to the world
+func (w *World) ApplySettings(dayDuration, nightBrightness float32, terrainConfig terrain.GeneratorConfig) {
+	if w.TimeOfDay != nil {
+		w.TimeOfDay.DayDurationSeconds = dayDuration
+		w.TimeOfDay.NightBrightness = nightBrightness
+	}
+	if w.TerrainGenerator != nil {
+		w.TerrainGenerator.SetConfig(terrainConfig)
+	}
 }
 
 // Render renders all visible chunks
