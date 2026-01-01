@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  base: "./", // Important for Electron production build
   resolve: {
     alias: {
       "@": "/src",
@@ -17,5 +18,13 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ["three", "@react-three/fiber", "@react-three/drei"],
+  },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+  },
+  server: {
+    port: 5173,
+    strictPort: false,
   },
 });

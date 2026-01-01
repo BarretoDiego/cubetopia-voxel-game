@@ -300,6 +300,9 @@ export class ChunkMesher {
 
     geometry.computeBoundingSphere();
 
+    // Aggressive cleanup - clear buffers immediately after creating geometry
+    this._resetBuffers();
+
     return geometry;
   }
 
@@ -307,13 +310,15 @@ export class ChunkMesher {
    * Reseta buffers para reutilização
    */
   _resetBuffers() {
-    this.positions = [];
-    this.normals = [];
-    this.uvs = [];
-    this.colors = [];
-    this.indices = [];
-    this.aoValues = [];
+    this.positions.length = 0;
+    this.normals.length = 0;
+    this.uvs.length = 0;
+    this.colors.length = 0;
+    this.indices.length = 0;
+    this.aoValues.length = 0;
   }
 }
 
-export default ChunkMesher;
+// Export singleton to avoid reallocation overhead
+export const sharedChunkMesher = new ChunkMesher();
+export default sharedChunkMesher;

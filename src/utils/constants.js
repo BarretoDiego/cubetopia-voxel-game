@@ -6,8 +6,13 @@
 export const CHUNK_SIZE = 16;
 export const CHUNK_HEIGHT = 64;
 
-// Distância de renderização (em chunks)
-export const RENDER_DISTANCE = 3;
+// Distância de renderização (em chunks) - 1 = 3x3 grid around player
+export const RENDER_DISTANCE = 1;
+
+// Maximum number of chunks - 3x3 = 9 visible + larger cache to preserve builds
+// Memory Management
+export const MAX_LOADED_CHUNKS = 100; // Increased to prevent thrashing (7x7 area = 49 chunks)
+export const MAX_CACHED_CHUNKS = 20; // Cache buffer
 
 // Física
 export const GRAVITY = 32; // Mais peso
@@ -49,3 +54,8 @@ export const AXIS = {
   Y: "y",
   Z: "z",
 };
+
+// Memory Management
+export const MAX_MEMORY_MB = 4096; // 4GB limit
+export const MEMORY_WARNING_THRESHOLD = 0.8; // 80% warning
+export const MEMORY_CHECK_INTERVAL = 2000; // Check every 2 seconds

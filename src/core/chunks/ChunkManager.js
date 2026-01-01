@@ -1,8 +1,14 @@
 /**
  * Gerenciador de Chunks - Controla carregamento e descarregamento
+ * with strict memory limits
  */
 
-import { CHUNK_SIZE, RENDER_DISTANCE } from "../../utils/constants.js";
+import {
+  CHUNK_SIZE,
+  RENDER_DISTANCE,
+  MAX_LOADED_CHUNKS,
+  MAX_CACHED_CHUNKS,
+} from "../../utils/constants.js";
 import { worldToChunk, distance2D } from "../../utils/mathUtils.js";
 import { LRUCache } from "../../utils/pooling.js";
 import { Chunk } from "./Chunk.js";
@@ -11,14 +17,15 @@ export class ChunkManager {
   constructor(worldGenerator) {
     this.worldGenerator = worldGenerator;
     this.chunks = new Map();
-    // Cache com callback de eviction para limpar recursos
-    this.chunkCache = new LRUCache(100, (chunk) => {
+    // Reduced cache size for memory management
+    this.chunkCache = new LRUCache(MAX_CACHED_CHUNKS, (chunk) => {
       if (chunk && chunk.dispose) {
         chunk.dispose();
       }
     });
     this.loadQueue = [];
     this.isLoading = false;
+    this.memoryPressure = false; // Flag when memory is high
 
     // Listeners
     this.onChunkLoaded = null;
@@ -47,6 +54,41 @@ export class ChunkManager {
   }
 
   /**
+   * Force unload chunks if over limit
+   */
+  _enforceChunkLimit() {
+    if (this.chunks.size <= MAX_LOADED_CHUNKS) return;
+
+    console.warn(
+      `[ChunkManager] Over limit! ${this.chunks.size}/${MAX_LOADED_CHUNKS} chunks. Forcing cleanup...`
+    );
+
+    // Get all chunks with their distance from center (0,0) as fallback
+    const chunkList = Array.from(this.chunks.entries());
+
+    // Sort by distance from origin (farthest first)
+    chunkList.sort((a, b) => {
+      const [, chunkA] = a;
+      const [, chunkB] = b;
+      const distA = Math.abs(chunkA.cx) + Math.abs(chunkA.cz);
+      const distB = Math.abs(chunkB.cx) + Math.abs(chunkB.cz);
+      return distB - distA; // Farthest first
+    });
+
+    // Unload excess chunks
+    const excess = this.chunks.size - MAX_LOADED_CHUNKS;
+    for (let i = 0; i < excess && i < chunkList.length; i++) {
+      const [id, chunk] = chunkList[i];
+      // Dispose directly instead of caching (to save memory)
+      if (chunk.dispose) {
+        chunk.dispose();
+      }
+      this.chunks.delete(id);
+      console.log(`[ChunkManager] Force unloaded chunk ${id}`);
+    }
+  }
+
+  /**
    * Carrega chunk de forma assíncrona
    */
   async loadChunk(cx, cz) {
@@ -54,6 +96,16 @@ export class ChunkManager {
 
     if (this.chunks.has(id)) {
       return this.chunks.get(id);
+    }
+
+    // ENFORCE MEMORY LIMIT - if over limit, don't load more
+    if (this.chunks.size >= MAX_LOADED_CHUNKS) {
+      this._enforceChunkLimit();
+      // If still over after cleanup, refuse to load
+      if (this.chunks.size >= MAX_LOADED_CHUNKS) {
+        console.warn(`[ChunkManager] Chunk limit reached, cannot load ${id}`);
+        return null;
+      }
     }
 
     // Verifica cache

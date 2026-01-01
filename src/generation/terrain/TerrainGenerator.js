@@ -81,6 +81,9 @@ export class TerrainGenerator {
     // Terceiro passo: decorações
     this._generateDecorations(chunk, startX, startZ);
 
+    // Quarto passo: cachoeiras
+    this._generateWaterfalls(chunk, startX, startZ);
+
     chunk.isGenerated = true;
   }
 
@@ -413,6 +416,117 @@ export class TerrainGenerator {
               ? BlockTypes.MUSHROOM_RED
               : BlockTypes.MUSHROOM_BROWN;
           chunk.setBlock(lx, height + 1, lz, mushroom);
+        }
+      }
+    }
+  }
+
+  /**
+   * Gera cachoeiras em biomas montanhosos
+   * Procura por penhascos e coloca água no topo
+   */
+  _generateWaterfalls(chunk, startX, startZ) {
+    const chunkRng = new SeededRNG(this.seed + chunk.cx * 3000 + chunk.cz);
+
+    // Só gera cachoeiras ocasionalmente
+    if (chunkRng.next() > 0.15) return; // 15% chance por chunk
+
+    for (let lx = 3; lx < CHUNK_SIZE - 3; lx++) {
+      for (let lz = 3; lz < CHUNK_SIZE - 3; lz++) {
+        const wx = startX + lx;
+        const wz = startZ + lz;
+        const biome = this._getBiome(wx, wz);
+
+        // Só em montanhas
+        if (biome.name !== "mountains") continue;
+
+        const height = chunk.getHeight(lx, lz);
+
+        // Precisa estar em altura elevada
+        if (height < 35) continue;
+
+        // Verifica se há um penhasco (grande diferença de altura)
+        const directions = [
+          { dx: 1, dz: 0 },
+          { dx: -1, dz: 0 },
+          { dx: 0, dz: 1 },
+          { dx: 0, dz: -1 },
+        ];
+
+        for (const { dx, dz } of directions) {
+          const neighborHeight = chunk.getHeight(lx + dx * 2, lz + dz * 2);
+          const heightDiff = height - neighborHeight;
+
+          // Precisa de uma queda significativa (pelo menos 8 blocos)
+          if (heightDiff >= 8 && chunkRng.next() < 0.3) {
+            // Coloca fonte de água no topo do penhasco
+            chunk.setBlock(lx, height, lz, BlockTypes.WATER);
+
+            // Cria a cascata descendo o penhasco
+            let currentY = height - 1;
+            let currentX = lx + dx;
+            let currentZ = lz + dz;
+
+            while (currentY > neighborHeight && currentY > SEA_LEVEL) {
+              if (
+                currentX >= 0 &&
+                currentX < CHUNK_SIZE &&
+                currentZ >= 0 &&
+                currentZ < CHUNK_SIZE
+              ) {
+                const blockBelow = chunk.getBlock(currentX, currentY, currentZ);
+
+                // Se há ar, coloca água
+                if (blockBelow === BlockTypes.AIR) {
+                  chunk.setBlock(
+                    currentX,
+                    currentY,
+                    currentZ,
+                    BlockTypes.WATER
+                  );
+                }
+              }
+              currentY--;
+            }
+
+            // Cria uma pequena poça na base
+            if (
+              currentX >= 1 &&
+              currentX < CHUNK_SIZE - 1 &&
+              currentZ >= 1 &&
+              currentZ < CHUNK_SIZE - 1 &&
+              currentY >= SEA_LEVEL
+            ) {
+              for (let px = -1; px <= 1; px++) {
+                for (let pz = -1; pz <= 1; pz++) {
+                  const poolX = currentX + px;
+                  const poolZ = currentZ + pz;
+                  if (
+                    poolX >= 0 &&
+                    poolX < CHUNK_SIZE &&
+                    poolZ >= 0 &&
+                    poolZ < CHUNK_SIZE
+                  ) {
+                    const groundHeight = chunk.getHeight(poolX, poolZ);
+                    if (
+                      chunk.getBlock(poolX, groundHeight + 1, poolZ) ===
+                      BlockTypes.AIR
+                    ) {
+                      chunk.setBlock(
+                        poolX,
+                        groundHeight + 1,
+                        poolZ,
+                        BlockTypes.WATER
+                      );
+                    }
+                  }
+                }
+              }
+            }
+
+            // Só uma cachoeira por chunk
+            return;
+          }
         }
       }
     }
