@@ -2,11 +2,26 @@ package render
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/mathgl/mgl32"
+)
+
+// ParticleType represents different atmospheric particle types
+type ParticleType int
+
+const (
+	ParticleTypeDefault ParticleType = iota
+	ParticleTypeDust                 // Desert/plains floating dust motes
+	ParticleTypeSpore                // Forest spores/pollen
+	ParticleTypeFirefly              // Glowing fireflies at night
+	ParticleTypeSnow                 // Falling snowflakes
+	ParticleTypeRain                 // Rain droplets
+	ParticleTypeAsh                  // Volcanic ash
+	ParticleTypeMist                 // Swamp/water mist
 )
 
 // Particle represents a single particle
@@ -16,6 +31,7 @@ type Particle struct {
 	Color    mgl32.Vec4
 	Life     float32
 	Size     float32
+	Type     ParticleType
 }
 
 // ParticleSystem manages particles
@@ -137,9 +153,60 @@ func (ps *ParticleSystem) Update(dt float32) {
 		p.Life -= dt
 
 		if p.Life > 0 {
-			// Update Physics
-			p.Velocity = p.Velocity.Add(mgl32.Vec3{0, -9.8 * dt, 0}) // Gravity
-			p.Position = p.Position.Add(p.Velocity.Mul(dt))
+			// Update Physics based on particle type
+			switch p.Type {
+			case ParticleTypeDust, ParticleTypeSpore:
+				// Floating particles - gentle drift, no gravity
+				// Add slight wave motion
+				wave := float32(math.Sin(float64(p.Life*3))) * 0.1
+				p.Velocity[1] = wave * 0.5
+				p.Position = p.Position.Add(p.Velocity.Mul(dt))
+
+			case ParticleTypeFirefly:
+				// Fireflies - random wandering motion
+				wander := mgl32.Vec3{
+					(rand.Float32() - 0.5) * 2,
+					(rand.Float32() - 0.5) * 1,
+					(rand.Float32() - 0.5) * 2,
+				}
+				p.Velocity = p.Velocity.Add(wander.Mul(dt * 5))
+				// Damping
+				p.Velocity = p.Velocity.Mul(0.98)
+				p.Position = p.Position.Add(p.Velocity.Mul(dt))
+				// Pulsing glow effect by modifying alpha
+				pulse := 0.5 + 0.5*float32(math.Sin(float64(p.Life*8)))
+				p.Color[3] = pulse * 0.9
+
+			case ParticleTypeSnow:
+				// Snow - slow falling with slight horizontal drift
+				p.Velocity[1] = -1.5 // Constant slow fall
+				// Add wind effect
+				p.Velocity[0] += (rand.Float32() - 0.5) * 0.1
+				p.Velocity[2] += (rand.Float32() - 0.5) * 0.1
+				// Damping horizontal movement
+				p.Velocity[0] *= 0.98
+				p.Velocity[2] *= 0.98
+				p.Position = p.Position.Add(p.Velocity.Mul(dt))
+
+			case ParticleTypeRain:
+				// Rain - fast falling
+				p.Velocity[1] = -15.0
+				p.Position = p.Position.Add(p.Velocity.Mul(dt))
+
+			case ParticleTypeMist:
+				// Mist - very slow floating upward
+				p.Velocity[1] = 0.3
+				p.Velocity[0] += (rand.Float32() - 0.5) * 0.05
+				p.Velocity[2] += (rand.Float32() - 0.5) * 0.05
+				p.Position = p.Position.Add(p.Velocity.Mul(dt))
+				// Fade out over time
+				p.Color[3] = p.Life / 5.0 * 0.4
+
+			default:
+				// Default behavior - gravity affected
+				p.Velocity = p.Velocity.Add(mgl32.Vec3{0, -9.8 * dt, 0})
+				p.Position = p.Position.Add(p.Velocity.Mul(dt))
+			}
 
 			// Keep alive
 			ps.particles[aliveCount] = *p

@@ -4,11 +4,13 @@ package world
 import (
 	"time"
 
+	"fmt"
 	"voxelgame/internal/core/block"
 	"voxelgame/internal/core/chunk"
 	"voxelgame/internal/generation/entity"
 	"voxelgame/internal/generation/terrain"
 	"voxelgame/internal/render"
+	"voxelgame/internal/save"
 
 	"github.com/go-gl/mathgl/mgl32"
 )
@@ -33,6 +35,9 @@ type World struct {
 	// Creature manager
 	CreatureManager *CreatureManager
 
+	// Save manager
+	SaveManager *save.Manager
+
 	// Player position for chunk loading
 	playerX, playerY, playerZ float64
 
@@ -47,7 +52,7 @@ func NewWorld(seed int64) *World {
 	terrainGen := terrain.NewGenerator(seed)
 
 	chunkConfig := chunk.DefaultManagerConfig()
-	chunkConfig.RenderDistance = 5 // Increased for better view
+	chunkConfig.RenderDistance = 10 // Default render distance
 	chunkConfig.MaxLoadedChunks = 200
 
 	w := &World{
@@ -57,6 +62,7 @@ func NewWorld(seed int64) *World {
 		ChunkRenderer:    render.NewChunkRenderer(),
 		Mesher:           chunk.NewMesher(),
 		CreatureManager:  NewCreatureManager(seed),
+		SaveManager:      save.NewManager(),
 		lastUpdateTime:   time.Now(),
 	}
 
@@ -161,9 +167,106 @@ type WorldStats struct {
 
 // Cleanup releases resources
 func (w *World) Cleanup() {
+	// Auto-save on exit
+	if err := w.Save("autosave"); err != nil {
+		fmt.Printf("Failed to autosave: %v\n", err)
+	}
+
 	w.ChunkManager.Clear()
 	w.ChunkRenderer.Cleanup()
 	w.CreatureManager.Clear()
+}
+
+// Save saves the world state
+func (w *World) Save(saveName string) error {
+	// Get all modifications from chunk manager
+	modifications := w.ChunkManager.GetAllModifications()
+
+	// Convert to save format
+	saveMods := make(map[string]save.ChunkModSave)
+	for id, mods := range modifications {
+		var saveBlockMods []save.BlockModSave
+		for _, m := range mods {
+			saveBlockMods = append(saveBlockMods, save.BlockModSave{
+				X:    m.X,
+				Y:    m.Y,
+				Z:    m.Z,
+				Type: uint8(m.Type),
+			})
+		}
+
+		// Parse chunk ID to get CX, CZ
+		var cx, cz int
+		fmt.Sscanf(id, "%d,%d", &cx, &cz)
+
+		saveMods[id] = save.ChunkModSave{
+			CX:            cx,
+			CZ:            cz,
+			Modifications: saveBlockMods,
+		}
+	}
+
+	playerSave := save.PlayerSave{
+		PositionX: float32(w.playerX),
+		PositionY: float32(w.playerY),
+		PositionZ: float32(w.playerZ),
+		// Yaw and Pitch would need to be passed in or stored in World if we want to save them
+	}
+
+	worldSave := save.WorldSave{
+		Seed:           w.Seed,
+		ModifiedChunks: saveMods,
+	}
+
+	return w.SaveManager.Save(saveName, save.SaveData{
+		Player: playerSave,
+		World:  worldSave,
+	})
+}
+
+// Load loads the world state
+func (w *World) Load(saveName string) error {
+	data, err := w.SaveManager.Load(saveName)
+	if err != nil {
+		return err
+	}
+
+	w.Seed = data.World.Seed
+	// Re-initialize generator with saved seed
+	w.TerrainGenerator = terrain.NewGenerator(w.Seed)
+	// Re-create manager with new generator (keeps config)
+	config := chunk.DefaultManagerConfig()
+	config.RenderDistance = 10
+	config.MaxLoadedChunks = 200
+	w.ChunkManager = chunk.NewManager(config, w.TerrainGenerator)
+
+	// Convert modifications back to chunk manager format
+	chunkMods := make(map[string][]chunk.BlockModificationWorld)
+	for id, modSave := range data.World.ModifiedChunks {
+		var blockMods []chunk.BlockModificationWorld
+		for _, m := range modSave.Modifications {
+			blockMods = append(blockMods, chunk.BlockModificationWorld{
+				X:    m.X,
+				Y:    m.Y,
+				Z:    m.Z,
+				Type: block.Type(m.Type),
+			})
+		}
+		chunkMods[id] = blockMods
+	}
+
+	w.ChunkManager.SetModifications(chunkMods)
+
+	// Set player position
+	w.playerX = float64(data.Player.PositionX)
+	w.playerY = float64(data.Player.PositionY)
+	w.playerZ = float64(data.Player.PositionZ)
+
+	// Setup callbacks again since we recreated the manager
+	w.ChunkManager.OnChunkLoaded = w.onChunkLoaded
+	w.ChunkManager.OnChunkUnloaded = w.onChunkUnloaded
+
+	return nil
 }
 
 // Private methods

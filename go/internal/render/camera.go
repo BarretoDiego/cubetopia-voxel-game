@@ -24,6 +24,8 @@ type Camera struct {
 	// Options
 	FOV         float32
 	Sensitivity float32
+	ThirdPerson bool
+	Distance    float32
 }
 
 // NewCamera creates a new camera at the given position
@@ -35,6 +37,7 @@ func NewCamera(position mgl32.Vec3) *Camera {
 		Pitch:       0.0,
 		FOV:         75.0,
 		Sensitivity: 0.1,
+		Distance:    5.0,
 	}
 	c.updateVectors()
 	return c
@@ -42,7 +45,12 @@ func NewCamera(position mgl32.Vec3) *Camera {
 
 // GetViewMatrix returns the view matrix for this camera
 func (c *Camera) GetViewMatrix() mgl32.Mat4 {
-	return mgl32.LookAtV(c.Position, c.Position.Add(c.Front), c.Up)
+	eye := c.Position
+	if c.ThirdPerson {
+		// In third person, move camera back by Distance along the Front vector
+		eye = c.Position.Sub(c.Front.Mul(c.Distance))
+	}
+	return mgl32.LookAtV(eye, c.Position.Add(c.Front), c.Up)
 }
 
 // ProcessMouseMovement handles mouse movement for looking around

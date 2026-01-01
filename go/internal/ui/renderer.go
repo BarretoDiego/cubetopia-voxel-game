@@ -254,6 +254,35 @@ func (r *Renderer) DrawDebugPanel(info DebugInfo) {
 	r.DrawText(x+padding, y+padding+lineHeight*4, 1.5, fmt.Sprintf("Mem: %d MB", info.MemoryMB), white)
 }
 
+// DrawControlsOverlay draws a list of game controls
+func (r *Renderer) DrawControlsOverlay(commands []string) {
+	if r.shader == nil || len(commands) == 0 {
+		return
+	}
+
+	width := float32(300)
+	lineHeight := float32(20)
+	padding := float32(10)
+
+	height := float32(len(commands))*lineHeight + padding*2
+
+	// Position: Top Right, below minimap (approx 150px down)
+	x := float32(r.width) - width - 10
+	y := float32(160)
+
+	// Background
+	r.DrawRect(x, y, width, height, [4]float32{0, 0, 0, 0.7})
+
+	// Header
+	r.DrawText(x+padding, y+padding, 1.2, "CONTROLS (H to toggle)", [4]float32{1, 1, 0, 1})
+
+	// Commands
+	white := [4]float32{1, 1, 1, 1}
+	for i, cmd := range commands {
+		r.DrawText(x+padding, y+padding+float32(i+1)*lineHeight, 1.2, cmd, white)
+	}
+}
+
 // DrawIsometricCube renders a fake 3D cube for UI
 func (r *Renderer) DrawIsometricCube(x, y, size float32, color [3]float32) {
 	if r.shader == nil {

@@ -56,8 +56,8 @@ type Config struct {
 // DefaultConfig returns default engine configuration
 func DefaultConfig() Config {
 	return Config{
-		Width:      1280,
-		Height:     720,
+		Width:      1920,
+		Height:     1080,
 		Title:      "Voxel Engine",
 		Fullscreen: false,
 		VSync:      true,

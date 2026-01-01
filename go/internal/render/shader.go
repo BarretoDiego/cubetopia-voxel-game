@@ -102,7 +102,8 @@ func (s *Shader) getUniformLocation(name string) int32 {
 func compileShader(source string, shaderType uint32) (uint32, error) {
 	shader := gl.CreateShader(shaderType)
 
-	csources, free := gl.Strs(source)
+	// Ensure shader source is null-terminated for OpenGL
+	csources, free := gl.Strs(source + "\x00")
 	gl.ShaderSource(shader, 1, csources, nil)
 	free()
 	gl.CompileShader(shader)

@@ -254,6 +254,14 @@ func (rt *RaytracingRenderer) renderDebugPattern(camera *Camera, sunDirection mg
 	rt.displayShader.SetVec3("uCameraPos", camera.Position)
 	rt.displayShader.SetVec3("uSunDir", sunDirection)
 
+	// Set camera orientation
+	rt.displayShader.SetVec3("uCameraFront", camera.Front)
+	rt.displayShader.SetVec3("uCameraRight", camera.Right)
+	rt.displayShader.SetVec3("uCameraUp", camera.Up)
+
+	aspectRatio := float32(rt.width) / float32(rt.height)
+	rt.displayShader.SetFloat("uAspectRatio", aspectRatio)
+
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.BindTexture(gl.TEXTURE_2D, rt.outputTexture)
 
@@ -315,6 +323,12 @@ uniform bool uRaytracingActive;
 uniform vec3 uCameraPos;
 uniform vec3 uSunDir;
 
+// Camera basis vectors
+uniform vec3 uCameraFront;
+uniform vec3 uCameraRight;
+uniform vec3 uCameraUp;
+uniform float uAspectRatio;
+
 out vec4 fragColor;
 
 // Simple ray marching for demonstration
@@ -337,14 +351,17 @@ vec3 rayMarch(vec3 ro, vec3 rd) {
         }
         
         // Simple voxel blocks (demonstration)
-        vec3 blockPos = floor(p);
-        if (blockPos.y >= 0.0 && blockPos.y < 10.0) {
-            float noise = fract(sin(dot(blockPos.xz, vec2(12.9898, 78.233))) * 43758.5453);
-            if (noise > 0.85 && mod(blockPos.y, 3.0) < 1.0) {
-                // Hit a block
-                vec3 blockColor = vec3(noise, noise * 0.7, noise * 0.4);
-                float light = dot(normalize(uSunDir), vec3(0, 1, 0)) * 0.5 + 0.5;
-                return blockColor * light;
+        // Only show blocks near origin to avoid infinite loop performance hits
+        if (length(p) < 50.0) {
+            vec3 blockPos = floor(p);
+            if (blockPos.y >= 0.0 && blockPos.y < 10.0) {
+                float noise = fract(sin(dot(blockPos.xz, vec2(12.9898, 78.233))) * 43758.5453);
+                if (noise > 0.85 && mod(blockPos.y, 3.0) < 1.0) {
+                    // Hit a block
+                    vec3 blockColor = vec3(noise, noise * 0.7, noise * 0.4);
+                    float light = dot(normalize(uSunDir), vec3(0, 1, 0)) * 0.5 + 0.5;
+                    return blockColor * light;
+                }
             }
         }
         
@@ -363,10 +380,18 @@ void main() {
         return;
     }
     
-    // Calculate ray direction from screen position
-    vec3 ro = uCameraPos;
-    vec3 rd = normalize(vec3(vScreenPos.x * 1.5, vScreenPos.y * 0.8, 1.0));
+    // Calculate ray direction based on camera orientation
+    // We assume a fixed FOV for now, or match the hardcoded values roughly
+    // FOV ~ 75 degrees implies tan(fov/2) ~= 0.76
+    float tangent = 0.76;
     
+    vec3 forward = normalize(uCameraFront);
+    vec3 right = normalize(uCameraRight);
+    vec3 up = normalize(uCameraUp);
+    
+    vec3 rd = normalize(forward + (vScreenPos.x * right * tangent * uAspectRatio) + (vScreenPos.y * up * tangent));
+    
+    vec3 ro = uCameraPos;
     vec3 color = rayMarch(ro, rd);
     
     // Raytracing indicator border

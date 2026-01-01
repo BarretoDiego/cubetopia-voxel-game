@@ -2,6 +2,7 @@
 package render
 
 import (
+	"voxelgame/internal/core/block"
 	"voxelgame/internal/generation/entity"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
@@ -135,6 +136,42 @@ func (cr *CreatureRenderer) RenderCreature(creature *entity.Creature, view, proj
 		default:
 			color = creature.AccentColor
 		}
+		cr.shader.SetVec3("uColor", mgl32.Vec3{color[0], color[1], color[2]})
+
+		gl.BindVertexArray(cr.cubeVAO)
+		gl.DrawArrays(gl.TRIANGLES, 0, 36)
+	}
+
+	// Render held item if any
+	if creature.HeldItem != block.Air {
+		// Calculate item position - assume right hand side
+		// For biped, roughly: x=0.5, y=0.8, z=0.5
+		var itemOffset mgl32.Vec3
+
+		switch creature.Template {
+		case entity.TemplateBiped:
+			itemOffset = mgl32.Vec3{0.6, 0.9, 0.5}
+		case entity.TemplateQuadruped:
+			itemOffset = mgl32.Vec3{0.4, 0.8, 0.8} // Mouth?
+		default:
+			itemOffset = mgl32.Vec3{0.5, 0.5, 0.5}
+		}
+
+		pos := creature.Position.Add(itemOffset)
+
+		// Item scale
+		itemSize := float32(0.25)
+
+		model := mgl32.Translate3D(pos.X(), pos.Y(), pos.Z())
+		// Rotate item slightly to look held
+		model = model.Mul4(mgl32.HomogRotate3DY(creature.Rotation))
+		model = model.Mul4(mgl32.HomogRotate3DX(mgl32.DegToRad(45))) // Tilt forward
+		model = model.Mul4(mgl32.Scale3D(itemSize, itemSize, itemSize))
+
+		cr.shader.SetMat4("uModel", model)
+
+		// Set color based on block type
+		color := creature.HeldItem.GetColor()
 		cr.shader.SetVec3("uColor", mgl32.Vec3{color[0], color[1], color[2]})
 
 		gl.BindVertexArray(cr.cubeVAO)

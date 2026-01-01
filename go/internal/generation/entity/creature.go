@@ -4,6 +4,7 @@ package entity
 import (
 	"math"
 
+	"voxelgame/internal/core/block"
 	vmath "voxelgame/pkg/math"
 
 	"github.com/go-gl/mathgl/mgl32"
@@ -98,6 +99,9 @@ type Creature struct {
 
 	// Stats
 	Stats CreatureStats
+
+	// Inventory
+	HeldItem block.Type
 }
 
 // Generator creates procedural creatures

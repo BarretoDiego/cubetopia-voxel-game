@@ -31,7 +31,7 @@ type Settings struct {
 func DefaultSettings() *Settings {
 	return &Settings{
 		// Graphics
-		RenderDistance:    3,
+		RenderDistance:    10,
 		EnableFXAA:        true,
 		EnableBloom:       true,
 		EnablePostProcess: true,
@@ -94,7 +94,7 @@ func NewSettingsMenu(settings *Settings) *SettingsMenu {
 		{
 			Name: "Render Distance",
 			Type: SettingInt,
-			Min:  1, Max: 8,
+			Min:  1, Max: 100,
 			OnChange: func(v interface{}) {
 				settings.RenderDistance = v.(int)
 			},

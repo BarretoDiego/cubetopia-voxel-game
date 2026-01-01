@@ -5,12 +5,14 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/go-gl/glfw/v3.3/glfw"
 	"github.com/go-gl/mathgl/mgl32"
 
 	"voxelgame/internal/core/block"
+	"voxelgame/internal/generation/entity"
 	"voxelgame/internal/physics"
 	"voxelgame/internal/render"
 	"voxelgame/internal/save"
@@ -24,6 +26,7 @@ type Game struct {
 	engine           *render.Engine
 	world            *world.World
 	player           *physics.Player
+	playerModel      *entity.Creature
 	movement         *physics.EnhancedMovement
 	sky              *render.Sky
 	postProcess      *render.PostProcess
@@ -57,11 +60,21 @@ type Game struct {
 	// Block interaction
 	targetBlock *physics.RaycastResult
 
+	// UI State
+	showControls bool
+	controlsList []string
+
 	// Key state for single press detection
 	lastKeyStates map[glfw.Key]bool
+
+	// Mouse button state for single click detection
+	lastMouseButtonStates map[glfw.MouseButton]bool
 }
 
 func main() {
+	// core: crucial for OpenGL on macOS
+	runtime.LockOSThread()
+
 	fmt.Println("=================================")
 	fmt.Println("  Voxel Engine - Go Edition")
 	fmt.Println("=================================")
@@ -73,6 +86,7 @@ func main() {
 	fmt.Println("  Space      - Jump")
 	fmt.Println("  Ctrl       - Crouch")
 	fmt.Println("  F          - Toggle fly mode")
+	fmt.Println("  C          - Toggle camera (1st/3rd person)")
 	fmt.Println("  R          - Toggle raytracing")
 	fmt.Println("  1-9        - Select hotbar slot")
 	fmt.Println("  Scroll     - Cycle hotbar")
@@ -97,10 +111,30 @@ func main() {
 // NewGame creates a new game instance
 func NewGame() (*Game, error) {
 	g := &Game{
-		lastFPSTime:   time.Now(),
-		screenWidth:   1280,
-		screenHeight:  720,
-		lastKeyStates: make(map[glfw.Key]bool),
+		lastFPSTime:           time.Now(),
+		screenWidth:           1920,
+		screenHeight:          1080,
+		lastKeyStates:         make(map[glfw.Key]bool),
+		lastMouseButtonStates: make(map[glfw.MouseButton]bool),
+		showControls:          false,
+		controlsList: []string{
+			"WASD - Move",
+			"Mouse - Look",
+			"Space - Jump",
+			"Shift - Sprint",
+			"Ctrl - Crouch",
+			"F - Fly Mode",
+			"C - Camera View",
+			"R - Raytracing",
+			"LMB - Break",
+			"RMB - Place",
+			"1-9 - Hotbar",
+			"H - Toggle Help",
+			"F3 - Debug Info",
+			"F5 - Quick Save",
+			"F9 - Quick Load",
+			"ESC - Pause",
+		},
 	}
 
 	// Create settings
@@ -209,6 +243,13 @@ func (g *Game) autoStartGame() {
 		return g.world.GetBlock(x, y, z)
 	})
 
+	// Create player model for 3rd person view
+	gen := entity.NewGenerator(seed)
+	g.playerModel = gen.Create(entity.TemplateBiped, "plains", spawnPos, 1.0)
+	// Customized colors for player
+	g.playerModel.PrimaryColor = [3]float32{0.2, 0.2, 0.8}   // Blue shirt
+	g.playerModel.SecondaryColor = [3]float32{0.1, 0.1, 0.1} // Dark pants
+
 	// Enable fly mode by default for easier navigation
 	g.player.IsFlying = true
 	fmt.Println("[DEBUG] Fly mode enabled by default")
@@ -263,6 +304,12 @@ func (g *Game) startNewGame() {
 		return g.world.GetBlock(x, y, z)
 	})
 
+	// Create player model for 3rd person view
+	gen := entity.NewGenerator(seed)
+	g.playerModel = gen.Create(entity.TemplateBiped, "plains", spawnPos, 1.0)
+	g.playerModel.PrimaryColor = [3]float32{0.2, 0.2, 0.8}
+	g.playerModel.SecondaryColor = [3]float32{0.1, 0.1, 0.1}
+
 	// Create enhanced movement
 	g.movement = physics.NewEnhancedMovement()
 
@@ -292,6 +339,12 @@ func (g *Game) loadGame() {
 	})
 	g.player.Yaw = data.Player.Yaw
 	g.player.Pitch = data.Player.Pitch
+
+	// Create player model for 3rd person view
+	gen := entity.NewGenerator(data.World.Seed)
+	g.playerModel = gen.Create(entity.TemplateBiped, "plains", spawnPos, 1.0)
+	g.playerModel.PrimaryColor = [3]float32{0.2, 0.2, 0.8}
+	g.playerModel.SecondaryColor = [3]float32{0.1, 0.1, 0.1}
 
 	// Create enhanced movement
 	g.movement = physics.NewEnhancedMovement()
@@ -441,6 +494,17 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 		}
 	}
 
+	// Toggle camera mode
+	if g.wasKeyJustPressed(input, glfw.KeyC) {
+		camera := g.engine.GetCamera()
+		camera.ThirdPerson = !camera.ThirdPerson
+		if camera.ThirdPerson {
+			fmt.Println("Third person view enabled")
+		} else {
+			fmt.Println("First person view enabled")
+		}
+	}
+
 	// Quick save (F5)
 	if g.wasKeyJustPressed(input, glfw.KeyF5) {
 		g.saveGame()
@@ -449,6 +513,11 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 	// Quick load (F9)
 	if g.wasKeyJustPressed(input, glfw.KeyF9) {
 		g.loadGame()
+	}
+
+	// Toggle Controls Overlay (H)
+	if g.wasKeyJustPressed(input, glfw.KeyH) {
+		g.showControls = !g.showControls
 	}
 
 	// Hotbar selection
@@ -576,15 +645,44 @@ func (g *Game) updatePlaying(input *render.Input, dt float32) {
 		g.targetBlock = nil
 	}
 
-	// Handle block interaction
-	if input.IsMouseButtonPressed(glfw.MouseButtonLeft) && g.targetBlock != nil {
+	// Handle block interaction - only on click (not while held)
+	if g.wasMouseButtonJustPressed(input, glfw.MouseButtonLeft) && g.targetBlock != nil {
+		// Get block color for particles before destroying
+		destroyedBlock := g.world.GetBlock(g.targetBlock.BlockPos[0], g.targetBlock.BlockPos[1], g.targetBlock.BlockPos[2])
+		blockColor := destroyedBlock.GetColor()
+
+		// Destroy block
 		g.world.SetBlock(g.targetBlock.BlockPos[0], g.targetBlock.BlockPos[1], g.targetBlock.BlockPos[2], block.Air)
+
+		// Emit destruction particles
+		if ps := g.engine.GetParticleSystem(); ps != nil {
+			blockCenter := mgl32.Vec3{
+				float32(g.targetBlock.BlockPos[0]) + 0.5,
+				float32(g.targetBlock.BlockPos[1]) + 0.5,
+				float32(g.targetBlock.BlockPos[2]) + 0.5,
+			}
+			particleColor := mgl32.Vec4{blockColor[0], blockColor[1], blockColor[2], 1.0}
+			ps.EmitExplosion(blockCenter, 12, particleColor)
+		}
 	}
-	if input.IsMouseButtonPressed(glfw.MouseButtonRight) && g.targetBlock != nil {
+
+	if g.wasMouseButtonJustPressed(input, glfw.MouseButtonRight) && g.targetBlock != nil {
 		placePos := physics.GetPlacementPosition(*g.targetBlock)
 		selectedBlock := g.inventory.GetSelectedBlock()
 		if selectedBlock != block.Air {
 			g.world.SetBlock(placePos[0], placePos[1], placePos[2], selectedBlock)
+
+			// Emit placement particles
+			if ps := g.engine.GetParticleSystem(); ps != nil {
+				blockCenter := mgl32.Vec3{
+					float32(placePos[0]) + 0.5,
+					float32(placePos[1]) + 0.5,
+					float32(placePos[2]) + 0.5,
+				}
+				blockColor := selectedBlock.GetColor()
+				particleColor := mgl32.Vec4{blockColor[0], blockColor[1], blockColor[2], 0.8}
+				ps.EmitExplosion(blockCenter, 8, particleColor)
+			}
 		}
 	}
 }
@@ -645,6 +743,13 @@ func (g *Game) wasKeyJustPressed(input *render.Input, key glfw.Key) bool {
 	return current && !last
 }
 
+func (g *Game) wasMouseButtonJustPressed(input *render.Input, button glfw.MouseButton) bool {
+	current := input.IsMouseButtonPressed(button)
+	last := g.lastMouseButtonStates[button]
+	g.lastMouseButtonStates[button] = current
+	return current && !last
+}
+
 // Render renders the game
 func (g *Game) Render() {
 	switch g.stateManager.CurrentState {
@@ -664,29 +769,9 @@ func (g *Game) Render() {
 }
 
 func (g *Game) renderMainMenu() {
-	// Simple background to verify rendering works
-	if g.uiRenderer != nil {
+	if g.uiRenderer != nil && g.mainMenu != nil {
 		g.uiRenderer.BeginFrame()
-
-		// Draw a large visible rectangle to test
-		g.uiRenderer.DrawRect(100, 100, float32(g.screenWidth-200), float32(g.screenHeight-200), [4]float32{0.2, 0.3, 0.5, 1.0})
-
-		// Draw title area
-		g.uiRenderer.DrawRect(float32(g.screenWidth)/2-150, 150, 300, 60, [4]float32{0.3, 0.4, 0.7, 1.0})
-
-		// Draw menu items
-		for i := 0; i < 4; i++ {
-			y := float32(250 + i*70)
-			bgColor := [4]float32{0.15, 0.15, 0.25, 0.9}
-			if i == g.mainMenu.SelectedIndex {
-				bgColor = [4]float32{0.4, 0.5, 0.8, 1.0}
-			}
-			g.uiRenderer.DrawRect(float32(g.screenWidth)/2-120, y, 240, 50, bgColor)
-		}
-
-		// Instructions at bottom
-		g.uiRenderer.DrawRect(float32(g.screenWidth)/2-200, float32(g.screenHeight)-80, 400, 30, [4]float32{0.1, 0.1, 0.15, 0.8})
-
+		g.menuRenderer.RenderMenu(g.mainMenu, g.screenWidth, g.screenHeight)
 		g.uiRenderer.EndFrame()
 	}
 }
@@ -730,6 +815,24 @@ func (g *Game) renderPlaying() {
 				sunDir = g.sky.GetSunDirection()
 			}
 			g.creatureRenderer.RenderCreatures(g.world.GetCreatures(), view, projection, sunDir)
+
+			// Render player in 3rd person
+			if g.engine.GetCamera().ThirdPerson && g.playerModel != nil {
+				// Update player model position and rotation
+				// Player position is eye height, model position is feet
+				feetPos := g.player.GetFeetPosition()
+				g.playerModel.Position = feetPos
+				// Convert yaw to radians and invert/adjust as needed keying off standard math
+				// Player Yaw: 0 = +X, 90 = +Z?
+				// MathGL RotateY: CCW rotation around Y
+				// We need to match the camera yaw
+				g.playerModel.Rotation = mgl32.DegToRad(-g.player.Yaw + 90)
+
+				// Update held item
+				g.playerModel.HeldItem = g.inventory.GetSelectedBlock()
+
+				g.creatureRenderer.RenderCreature(g.playerModel, view, projection, sunDir)
+			}
 		}
 	}
 
@@ -764,6 +867,11 @@ func (g *Game) renderPlaying() {
 			g.uiRenderer.DrawRect(10, float32(g.screenHeight-40), 120, 25, [4]float32{1, 0.5, 0, 0.8})
 		}
 
+		// Controls Overlay
+		if g.showControls {
+			g.uiRenderer.DrawControlsOverlay(g.controlsList)
+		}
+
 		g.uiRenderer.EndFrame()
 	}
 }
@@ -780,31 +888,117 @@ func (g *Game) renderSettings() {
 	if g.uiRenderer != nil {
 		g.uiRenderer.BeginFrame()
 		// Render settings as a simple menu-like display
-		g.uiRenderer.DrawRect(0, 0, float32(g.screenWidth), float32(g.screenHeight), [4]float32{0, 0, 0, 0.8})
+		g.uiRenderer.DrawRect(0, 0, float32(g.screenWidth), float32(g.screenHeight), [4]float32{0.05, 0.05, 0.1, 0.95})
+
+		// Settings panel
+		panelWidth := float32(600)
+		panelHeight := float32(600)
+		panelX := (float32(g.screenWidth) - panelWidth) / 2
+		panelY := (float32(g.screenHeight) - panelHeight) / 2
+
+		// Panel background
+		g.uiRenderer.DrawRect(panelX, panelY, panelWidth, panelHeight, [4]float32{0.1, 0.1, 0.15, 0.9})
+		// Border
+		g.uiRenderer.DrawRect(panelX, panelY, panelWidth, 3, [4]float32{0.3, 0.5, 0.8, 1.0})
+		g.uiRenderer.DrawRect(panelX, panelY+panelHeight-3, panelWidth, 3, [4]float32{0.3, 0.5, 0.8, 1.0})
 
 		// Settings title bar
-		g.uiRenderer.DrawRect(float32(g.screenWidth)/2-200, 100, 400, 50, [4]float32{0.2, 0.3, 0.5, 1})
+		titleHeight := float32(60)
+		g.uiRenderer.DrawRect(panelX, panelY, panelWidth, titleHeight, [4]float32{0.2, 0.3, 0.5, 1})
+		g.uiRenderer.DrawText(panelX+panelWidth/2-80, panelY+15, 3.0, "SETTINGS", [4]float32{1, 1, 1, 1})
 
 		// Settings items
+		itemY := panelY + titleHeight + 20
+		itemHeight := float32(40)
 		for i, item := range g.settingsMenu.Items {
-			y := float32(180 + i*45)
-			bgColor := [4]float32{0.15, 0.15, 0.2, 0.8}
+			// Item background
+			bgColor := [4]float32{0.15, 0.15, 0.2, 0.5}
 			if i == g.settingsMenu.SelectedIndex {
-				bgColor = [4]float32{0.3, 0.4, 0.6, 0.9}
+				bgColor = [4]float32{0.3, 0.4, 0.6, 0.8}
 			}
-			g.uiRenderer.DrawRect(float32(g.screenWidth)/2-200, y, 400, 40, bgColor)
+			g.uiRenderer.DrawRect(panelX+20, itemY, panelWidth-40, itemHeight, bgColor)
 
-			// Setting name indicator
-			nameWidth := float32(len(item.Name) * 8)
-			g.uiRenderer.DrawRect(float32(g.screenWidth)/2-180, y+10, nameWidth, 20, [4]float32{0.7, 0.7, 0.7, 1})
+			// Selection indicator
+			if i == g.settingsMenu.SelectedIndex {
+				g.uiRenderer.DrawRect(panelX+20, itemY, 4, itemHeight, [4]float32{1, 0.8, 0.2, 1})
+			}
 
-			// Setting value indicator
-			valueColor := [4]float32{0.3, 0.8, 0.3, 1}
-			g.uiRenderer.DrawRect(float32(g.screenWidth)/2+100, y+10, 80, 20, valueColor)
+			// Setting Name
+			nameColor := [4]float32{0.8, 0.8, 0.8, 1}
+			if i == g.settingsMenu.SelectedIndex {
+				nameColor = [4]float32{1, 1, 1, 1}
+			}
+			g.uiRenderer.DrawText(panelX+40, itemY+10, 2.0, item.Name, nameColor)
+
+			// Setting Value
+			valueStr := ""
+			switch item.Type {
+			case ui.SettingBool:
+				val := item.Value
+				if v, ok := g.getSettingValue(item.Name).(bool); ok {
+					val = v
+				}
+				if val == true {
+					valueStr = "ON"
+				} else {
+					valueStr = "OFF"
+				}
+			case ui.SettingInt:
+				if v, ok := g.getSettingValue(item.Name).(int); ok {
+					valueStr = fmt.Sprintf("%d", v)
+				}
+			case ui.SettingFloat:
+				if v, ok := g.getSettingValue(item.Name).(float32); ok {
+					valueStr = fmt.Sprintf("%.2f", v)
+				}
+			}
+
+			valueColor := [4]float32{0.3, 0.8, 0.3, 1} // Greenish
+			if valueStr == "OFF" {
+				valueColor = [4]float32{0.8, 0.3, 0.3, 1} // Reddish
+			}
+
+			// Align value to right
+			valWidth := float32(len(valueStr) * 10) // Approx
+			g.uiRenderer.DrawText(panelX+panelWidth-60-valWidth, itemY+10, 2.0, valueStr, valueColor)
+
+			itemY += itemHeight + 5
 		}
+
+		// Instructions
+		g.uiRenderer.DrawText(panelX+20, panelY+panelHeight-40, 1.5, "ARROWS to change, ESC to back", [4]float32{0.6, 0.6, 0.6, 1})
 
 		g.uiRenderer.EndFrame()
 	}
+}
+
+// Helper to get current value from settings struct
+func (g *Game) getSettingValue(name string) interface{} {
+	// This duplicates logic in SettingsMenu but is needed for display
+	// Ideally SettingsMenu would hold the current value directly
+	switch name {
+	case "Render Distance":
+		return g.settings.RenderDistance
+	case "FXAA":
+		return g.settings.EnableFXAA
+	case "Bloom":
+		return g.settings.EnableBloom
+	case "Post Processing":
+		return g.settings.EnablePostProcess
+	case "Raytracing":
+		return g.settings.EnableRaytracing
+	case "Bloom Strength":
+		return g.settings.BloomStrength
+	case "FOV":
+		return g.settings.FOV
+	case "Mouse Sensitivity":
+		return g.settings.MouseSensitivity
+	case "Invert Y":
+		return g.settings.InvertY
+	case "VSync":
+		return g.settings.VSync
+	}
+	return nil
 }
 
 // Cleanup releases resources

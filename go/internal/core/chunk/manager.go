@@ -9,11 +9,27 @@ import (
 	"voxelgame/internal/core/block"
 )
 
+// BlockModification represents a change to a block
+type BlockModification struct {
+	Index int // Block index inside the chunk
+	Type  block.Type
+}
+
+// BlockModificationWorld represents a change to a block in world coordinates (for saving)
+type BlockModificationWorld struct {
+	X, Y, Z int
+	Type    block.Type
+}
+
 // Manager handles chunk loading, unloading, and caching
 type Manager struct {
 	// Active chunks
 	chunks map[string]*Chunk
 	mu     sync.RWMutex
+
+	// Modifications tracking (chunkID -> list of mods)
+	modifications   map[string][]BlockModification
+	modificationsMu sync.RWMutex
 
 	// LRU cache for unloaded chunks
 	cache      map[string]*Chunk
@@ -58,6 +74,7 @@ func DefaultManagerConfig() ManagerConfig {
 func NewManager(config ManagerConfig, generator ChunkGenerator) *Manager {
 	return &Manager{
 		chunks:          make(map[string]*Chunk),
+		modifications:   make(map[string][]BlockModification),
 		cache:           make(map[string]*Chunk),
 		cacheOrder:      make([]string, 0, config.MaxCachedChunks),
 		maxLoadedChunks: config.MaxLoadedChunks,
@@ -143,6 +160,21 @@ func (m *Manager) LoadChunk(cx, cz int) *Chunk {
 
 	if m.generator != nil {
 		m.generator.GenerateChunk(chunk)
+	}
+
+	// Apply stored modifications
+	m.modificationsMu.RLock()
+	mods, hasMods := m.modifications[id]
+	m.modificationsMu.RUnlock()
+
+	if hasMods {
+		for _, mod := range mods {
+			// Convert index back to local coordinates
+			lx := mod.Index % Size
+			lz := (mod.Index / Size) % Size
+			ly := mod.Index / (Size * Size)
+			chunk.SetBlock(lx, ly, lz, mod.Type)
+		}
 	}
 
 	chunk.IsGenerated = true
@@ -274,6 +306,11 @@ func (m *Manager) SetBlock(wx, wy, wz int, t block.Type) bool {
 
 	result := chunk.SetBlock(lx, wy, lz, t)
 
+	// Record modification
+	if result {
+		m.recordModification(cx, cz, lx, wy, lz, t)
+	}
+
 	// Mark neighboring chunks dirty if block is on edge
 	if result {
 		if lx == 0 {
@@ -358,6 +395,108 @@ func (m *Manager) Clear() {
 	m.cache = make(map[string]*Chunk)
 	m.cacheOrder = m.cacheOrder[:0]
 	m.cacheMu.Unlock()
+
+	m.modificationsMu.Lock()
+	m.modifications = make(map[string][]BlockModification)
+	m.modificationsMu.Unlock()
+}
+
+// GetAllModifications returns all stored modifications for saving
+func (m *Manager) GetAllModifications() map[string][]BlockModificationWorld {
+	m.modificationsMu.RLock()
+	defer m.modificationsMu.RUnlock()
+
+	result := make(map[string][]BlockModificationWorld)
+
+	for id, mods := range m.modifications {
+		var worldMods []BlockModificationWorld
+
+		// Parse chunk ID
+		var cx, cz int
+		fmt.Sscanf(id, "%d,%d", &cx, &cz)
+
+		chunkX, chunkZ := cx*Size, cz*Size
+
+		for _, mod := range mods {
+			lx := mod.Index % Size
+			lz := (mod.Index / Size) % Size
+			ly := mod.Index / (Size * Size)
+
+			worldMods = append(worldMods, BlockModificationWorld{
+				X:    chunkX + lx,
+				Y:    ly,
+				Z:    chunkZ + lz,
+				Type: mod.Type,
+			})
+		}
+		result[id] = worldMods
+	}
+
+	return result
+}
+
+// SetModifications loads modifications from save
+func (m *Manager) SetModifications(mods map[string][]BlockModificationWorld) {
+	m.modificationsMu.Lock()
+	defer m.modificationsMu.Unlock()
+
+	m.modifications = make(map[string][]BlockModification)
+
+	for id, worldMods := range mods {
+		var localMods []BlockModification
+
+		// Parse chunk ID to get base coordinates
+		var cx, cz int
+		fmt.Sscanf(id, "%d,%d", &cx, &cz)
+		chunkX, chunkZ := cx*Size, cz*Size
+
+		for _, wm := range worldMods {
+			lx := wm.X - chunkX
+			lz := wm.Z - chunkZ
+			ly := wm.Y
+
+			// Verify bounds just in case (though should be correct if saved correctly)
+			if lx >= 0 && lx < Size && lz >= 0 && lz < Size && ly >= 0 && ly < Height {
+				index := lx + lz*Size + ly*Size*Size
+				localMods = append(localMods, BlockModification{
+					Index: index,
+					Type:  wm.Type,
+				})
+			}
+		}
+
+		m.modifications[id] = localMods
+	}
+}
+
+// recordModification stores a block change
+func (m *Manager) recordModification(cx, cz, lx, ly, lz int, t block.Type) {
+	id := m.chunkID(cx, cz)
+	index := lx + lz*Size + ly*Size*Size
+
+	m.modificationsMu.Lock()
+	defer m.modificationsMu.Unlock()
+
+	mods := m.modifications[id]
+
+	// Check if we already have a modification for this index, update it if so
+	found := false
+	for i, mod := range mods {
+		if mod.Index == index {
+			mods[i].Type = t
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		mods = append(mods, BlockModification{
+			Index: index,
+			Type:  t,
+		})
+	}
+
+	m.modifications[id] = mods
 }
 
 // Helper methods

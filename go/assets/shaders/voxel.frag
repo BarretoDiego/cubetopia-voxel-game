@@ -11,8 +11,8 @@ uniform vec3 uSunDirection;
 uniform vec3 uCameraPos;
 uniform float uTime;
 
-// Textures
-// uniform sampler2DArray uBlockAtlas; // We will use this later
+// Textures - functionality to be implemented
+// uniform sampler2DArray uBlockAtlas; 
 // uniform sampler2D uSkybox; 
 
 out vec4 fragColor;
